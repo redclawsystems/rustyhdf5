@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "crates/rustyhdf5-format",
+    "crates/rustyhdf5-types",
+    "crates/rustyhdf5-io",
+    "crates/rustyhdf5-filters",
+    "crates/rustyhdf5-derive",
+    "crates/rustyhdf5",
+    "crates/rustyhdf5-netcdf4",
+    "crates/rustyhdf5-ann",
+    "crates/rustyhdf5-py",
+    "crates/rustyhdf5-gpu",
+    "crates/rustyhdf5-accel",
+]
+resolver = "2"
