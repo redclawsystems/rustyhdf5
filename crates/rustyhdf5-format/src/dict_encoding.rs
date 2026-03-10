@@ -15,17 +15,19 @@
 //! assert_eq!(encoded.dictionary, vec!["cat", "dog", "bird"]);
 //!
 //! // Decode back
-//! let decoded = encoded.decode();
+//! let decoded = encoded.decode().unwrap();
 //! assert_eq!(decoded, strings);
 //! ```
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec, vec::Vec};
 
-#[cfg(feature = "std")]
-use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+use crate::error::FormatError;
 
 /// Result of dictionary encoding a string array.
 #[derive(Debug, Clone, PartialEq)]
@@ -117,18 +119,38 @@ impl DictionaryEncoder {
 
 impl DictEncoded {
     /// Decode the dictionary-encoded data back to strings.
-    pub fn decode(&self) -> Vec<&str> {
+    ///
+    /// Returns an error if any index is negative or out of bounds.
+    pub fn decode(&self) -> Result<Vec<&str>, FormatError> {
         self.indices
             .iter()
-            .map(|&idx| self.dictionary[idx as usize].as_str())
+            .map(|&idx| {
+                if idx < 0 || (idx as usize) >= self.dictionary.len() {
+                    return Err(FormatError::SerializationError(format!(
+                        "dictionary index {idx} out of bounds (dictionary length {})",
+                        self.dictionary.len()
+                    )));
+                }
+                Ok(self.dictionary[idx as usize].as_str())
+            })
             .collect()
     }
 
     /// Decode to owned strings.
-    pub fn decode_owned(&self) -> Vec<String> {
+    ///
+    /// Returns an error if any index is negative or out of bounds.
+    pub fn decode_owned(&self) -> Result<Vec<String>, FormatError> {
         self.indices
             .iter()
-            .map(|&idx| self.dictionary[idx as usize].clone())
+            .map(|&idx| {
+                if idx < 0 || (idx as usize) >= self.dictionary.len() {
+                    return Err(FormatError::SerializationError(format!(
+                        "dictionary index {idx} out of bounds (dictionary length {})",
+                        self.dictionary.len()
+                    )));
+                }
+                Ok(self.dictionary[idx as usize].clone())
+            })
             .collect()
     }
 
@@ -164,7 +186,7 @@ mod tests {
     fn roundtrip() {
         let strings = vec!["alpha", "beta", "gamma", "alpha", "beta"];
         let encoded = DictionaryEncoder::encode(&strings);
-        let decoded = encoded.decode();
+        let decoded = encoded.decode().unwrap();
         assert_eq!(decoded, strings);
     }
 
@@ -228,7 +250,11 @@ mod tests {
 
     #[test]
     fn encode_owned_strings() {
-        let strings = vec![String::from("hello"), String::from("world"), String::from("hello")];
+        let strings = vec![
+            String::from("hello"),
+            String::from("world"),
+            String::from("hello"),
+        ];
         let encoded = DictionaryEncoder::encode_owned(&strings);
         assert_eq!(encoded.indices, vec![0, 1, 0]);
         assert_eq!(encoded.dictionary, vec!["hello", "world"]);
@@ -238,7 +264,7 @@ mod tests {
     fn decode_owned() {
         let strings = vec!["x", "y", "x"];
         let encoded = DictionaryEncoder::encode(&strings);
-        let decoded = encoded.decode_owned();
+        let decoded = encoded.decode_owned().unwrap();
         assert_eq!(decoded, vec!["x", "y", "x"]);
     }
 }

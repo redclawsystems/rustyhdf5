@@ -214,9 +214,15 @@ pub fn build_dataset_metadata(
 }
 
 fn check_duplicates(entries: &[IndexEntry]) -> Result<(), FormatError> {
-    for i in 1..entries.len() {
-        if entries[i].name == entries[i - 1].name {
-            return Err(FormatError::DuplicateDatasetName(entries[i].name.clone()));
+    if entries.len() <= 1 {
+        return Ok(());
+    }
+    // Sort names so adjacent-comparison works regardless of input order.
+    let mut names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    names.sort_unstable();
+    for i in 1..names.len() {
+        if names[i] == names[i - 1] {
+            return Err(FormatError::DuplicateDatasetName(names[i].to_string()));
         }
     }
     Ok(())

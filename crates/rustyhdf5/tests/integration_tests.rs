@@ -32,7 +32,10 @@ fn full_read_pipeline() {
     assert_eq!(groups, vec!["sensors"]);
 
     let root_attrs = root.attrs().unwrap();
-    assert!(matches!(root_attrs.get("file_version"), Some(AttrValue::I64(3))));
+    assert!(matches!(
+        root_attrs.get("file_version"),
+        Some(AttrValue::I64(3))
+    ));
 
     // Navigate group
     let sensors = file.group("sensors").unwrap();
@@ -41,9 +44,7 @@ fn full_read_pipeline() {
     assert_eq!(ds_names, vec!["pressure", "temperature"]);
 
     let group_attrs = sensors.attrs().unwrap();
-    assert!(
-        matches!(group_attrs.get("location"), Some(AttrValue::String(s)) if s == "lab_a")
-    );
+    assert!(matches!(group_attrs.get("location"), Some(AttrValue::String(s)) if s == "lab_a"));
 
     // Read datasets
     let temp = file.dataset("sensors/temperature").unwrap();
@@ -52,9 +53,7 @@ fn full_read_pipeline() {
     assert_eq!(temp.read_f64().unwrap(), vec![20.0, 21.5, 22.3]);
 
     let ds_attrs = temp.attrs().unwrap();
-    assert!(
-        matches!(ds_attrs.get("units"), Some(AttrValue::String(s)) if s == "celsius")
-    );
+    assert!(matches!(ds_attrs.get("units"), Some(AttrValue::String(s)) if s == "celsius"));
 
     let pressure = file.dataset("sensors/pressure").unwrap();
     assert_eq!(pressure.dtype().unwrap(), DType::F32);
@@ -91,18 +90,14 @@ fn full_write_pipeline() {
     let file = File::open(&path).unwrap();
 
     let root_attrs = file.root().attrs().unwrap();
-    assert!(
-        matches!(root_attrs.get("created_by"), Some(AttrValue::String(s)) if s == "rustyhdf5")
-    );
+    assert!(matches!(root_attrs.get("created_by"), Some(AttrValue::String(s)) if s == "rustyhdf5"));
 
     let results = file.dataset("experiment/results").unwrap();
     assert_eq!(results.shape().unwrap(), vec![2, 2]);
     assert_eq!(results.read_f64().unwrap(), vec![1.0, 2.0, 3.0, 4.0]);
 
     let ds_attrs = results.attrs().unwrap();
-    assert!(
-        matches!(ds_attrs.get("description"), Some(AttrValue::String(s)) if s == "2x2 matrix")
-    );
+    assert!(matches!(ds_attrs.get("description"), Some(AttrValue::String(s)) if s == "2x2 matrix"));
 
     let exp = file.group("experiment").unwrap();
     let exp_attrs = exp.attrs().unwrap();
@@ -444,14 +439,8 @@ fn attributes_on_everything() {
     b.set_attr("file_str", AttrValue::String("hello".into()));
     b.set_attr("file_int", AttrValue::I64(99));
     b.set_attr("file_float", AttrValue::F64(2.5));
-    b.set_attr(
-        "file_arr",
-        AttrValue::F64Array(vec![1.0, 2.0, 3.0]),
-    );
-    b.set_attr(
-        "file_iarr",
-        AttrValue::I64Array(vec![10, 20, 30]),
-    );
+    b.set_attr("file_arr", AttrValue::F64Array(vec![1.0, 2.0, 3.0]));
+    b.set_attr("file_iarr", AttrValue::I64Array(vec![10, 20, 30]));
 
     // Group-level attrs
     let mut g = b.create_group("grp");
@@ -475,10 +464,11 @@ fn attributes_on_everything() {
 
     // Verify file attrs
     let root_attrs = file.root().attrs().unwrap();
-    assert!(
-        matches!(root_attrs.get("file_str"), Some(AttrValue::String(s)) if s == "hello")
-    );
-    assert!(matches!(root_attrs.get("file_int"), Some(AttrValue::I64(99))));
+    assert!(matches!(root_attrs.get("file_str"), Some(AttrValue::String(s)) if s == "hello"));
+    assert!(matches!(
+        root_attrs.get("file_int"),
+        Some(AttrValue::I64(99))
+    ));
     assert!(
         matches!(root_attrs.get("file_float"), Some(AttrValue::F64(v)) if (*v - 2.5).abs() < 1e-10)
     );
@@ -492,17 +482,13 @@ fn attributes_on_everything() {
     // Verify group attrs
     let grp = file.group("grp").unwrap();
     let grp_attrs = grp.attrs().unwrap();
-    assert!(
-        matches!(grp_attrs.get("grp_str"), Some(AttrValue::String(s)) if s == "world")
-    );
+    assert!(matches!(grp_attrs.get("grp_str"), Some(AttrValue::String(s)) if s == "world"));
     assert!(matches!(grp_attrs.get("grp_int"), Some(AttrValue::I64(-1))));
 
     // Verify dataset attrs (in group)
     let ds = file.dataset("grp/data").unwrap();
     let ds_attrs = ds.attrs().unwrap();
-    assert!(
-        matches!(ds_attrs.get("ds_str"), Some(AttrValue::String(s)) if s == "dataset_attr")
-    );
+    assert!(matches!(ds_attrs.get("ds_str"), Some(AttrValue::String(s)) if s == "dataset_attr"));
     assert!(
         matches!(ds_attrs.get("ds_float"), Some(AttrValue::F64(v)) if (*v - 42.0).abs() < 1e-10)
     );
@@ -553,7 +539,8 @@ fn overwrite_file() {
 
     // Write first version
     let mut b1 = FileBuilder::new();
-    b1.create_dataset("version1").with_f64_data(&[1.0, 2.0, 3.0]);
+    b1.create_dataset("version1")
+        .with_f64_data(&[1.0, 2.0, 3.0]);
     b1.set_attr("version", AttrValue::I64(1));
     b1.write(&path).unwrap();
 

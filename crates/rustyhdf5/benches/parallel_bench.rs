@@ -1,6 +1,6 @@
 //! Benchmark: File::open vs MmapFile::open, sequential vs parallel chunk decompression.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use rustyhdf5::FileBuilder;
 
 fn generate_f64_file(num_elements: usize) -> Vec<u8> {

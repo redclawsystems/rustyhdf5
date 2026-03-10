@@ -191,6 +191,7 @@ impl SubfileManager {
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
+                .truncate(false)
                 .open(path)?;
             std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(op.local_offset))?;
             let end = data_offset + op.length as usize;

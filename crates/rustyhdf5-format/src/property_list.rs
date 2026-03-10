@@ -109,6 +109,41 @@ impl DatasetCreateProps {
         self.alignment = bytes;
         self
     }
+
+    /// Validate that the property list is internally consistent.
+    ///
+    /// Returns `Ok(())` if the configuration is valid, or an error string
+    /// describing the first contradiction found.
+    ///
+    /// Checked invariants:
+    /// - Compact storage and chunk_dims are mutually exclusive.
+    /// - Deflate, shuffle, LZ4, and Zstd filters require chunked storage (chunk_dims).
+    /// - Deflate level must be 0..=9.
+    /// - Zstd level must be 1..=22.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.compact && self.chunk_dims.is_some() {
+            return Err("compact storage is incompatible with chunk_dims");
+        }
+        let has_filters = self.deflate_level.is_some()
+            || self.shuffle
+            || self.lz4
+            || self.zstd_level.is_some()
+            || self.fletcher32;
+        if has_filters && self.chunk_dims.is_none() && !self.compact {
+            return Err("compression/filter requires chunked storage (set chunk_dims)");
+        }
+        if let Some(level) = self.deflate_level
+            && level > 9
+        {
+            return Err("deflate level must be 0..=9");
+        }
+        if let Some(level) = self.zstd_level
+            && !(1..=22).contains(&level)
+        {
+            return Err("zstd level must be 1..=22");
+        }
+        Ok(())
+    }
 }
 
 /// File access properties.
@@ -169,7 +204,7 @@ impl Default for FileAccessProps {
             alignment_threshold: 0,
             alignment_bytes: 0,
             sieve_buffer_size: 64 * 1024, // 64 KiB
-            metadata_block_size: 2048, // 2 KiB
+            metadata_block_size: 2048,    // 2 KiB
             lib_version_bounds: (lib_version::EARLIEST, lib_version::LATEST),
         }
     }
@@ -326,7 +361,10 @@ mod tests {
         assert_eq!(fapl.chunk_cache_slots, 521);
         assert_eq!(fapl.sieve_buffer_size, 64 * 1024);
         assert_eq!(fapl.metadata_block_size, 2048);
-        assert_eq!(fapl.lib_version_bounds, (lib_version::EARLIEST, lib_version::LATEST));
+        assert_eq!(
+            fapl.lib_version_bounds,
+            (lib_version::EARLIEST, lib_version::LATEST)
+        );
     }
 
     #[test]
@@ -340,7 +378,10 @@ mod tests {
         assert_eq!(fapl.chunk_cache_slots, 127);
         assert_eq!(fapl.sieve_buffer_size, 128 * 1024);
         assert_eq!(fapl.metadata_block_size, 4096);
-        assert_eq!(fapl.lib_version_bounds, (lib_version::V110, lib_version::LATEST));
+        assert_eq!(
+            fapl.lib_version_bounds,
+            (lib_version::V110, lib_version::LATEST)
+        );
     }
 
     #[test]
@@ -367,5 +408,35 @@ mod tests {
         assert_eq!(fcpl.group_leaf_node_k, 8);
         assert_eq!(fcpl.group_internal_node_k, 32);
         assert_eq!(fcpl.indexed_storage_internal_node_k, 64);
+    }
+
+    #[test]
+    fn dcpl_validate_ok() {
+        let dcpl = DatasetCreateProps::new().chunk(&[10]).deflate(6);
+        assert!(dcpl.validate().is_ok());
+    }
+
+    #[test]
+    fn dcpl_validate_compact_with_chunks() {
+        let dcpl = DatasetCreateProps::new().compact().chunk(&[10]);
+        assert_eq!(
+            dcpl.validate().unwrap_err(),
+            "compact storage is incompatible with chunk_dims"
+        );
+    }
+
+    #[test]
+    fn dcpl_validate_deflate_without_chunks() {
+        let dcpl = DatasetCreateProps::new().deflate(6);
+        assert_eq!(
+            dcpl.validate().unwrap_err(),
+            "compression/filter requires chunked storage (set chunk_dims)"
+        );
+    }
+
+    #[test]
+    fn dcpl_validate_deflate_level_too_high() {
+        let dcpl = DatasetCreateProps::new().chunk(&[10]).deflate(10);
+        assert_eq!(dcpl.validate().unwrap_err(), "deflate level must be 0..=9");
     }
 }

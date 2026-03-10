@@ -58,8 +58,14 @@ impl Selection {
         let mut start = Vec::with_capacity(rank);
         let mut count = Vec::with_capacity(rank);
         for r in ranges {
+            debug_assert!(
+                r.end >= r.start,
+                "Selection::slice: range end ({}) < start ({})",
+                r.end,
+                r.start,
+            );
             start.push(r.start);
-            count.push(r.end - r.start);
+            count.push(r.end.saturating_sub(r.start));
         }
         Selection::Hyperslab {
             start,
@@ -74,9 +80,11 @@ impl Selection {
         match self {
             Selection::All => dims.iter().product(),
             Selection::None => 0,
-            Selection::Hyperslab { count, block, .. } => {
-                count.iter().zip(block.iter()).map(|(&c, &b)| c * b).product()
-            }
+            Selection::Hyperslab { count, block, .. } => count
+                .iter()
+                .zip(block.iter())
+                .map(|(&c, &b)| c * b)
+                .product(),
             Selection::Points(pts) => pts.len() as u64,
         }
     }
@@ -98,9 +106,11 @@ impl Selection {
         match self {
             Selection::All => dims.to_vec(),
             Selection::None => vec![],
-            Selection::Hyperslab { count, block, .. } => {
-                count.iter().zip(block.iter()).map(|(&c, &b)| c * b).collect()
-            }
+            Selection::Hyperslab { count, block, .. } => count
+                .iter()
+                .zip(block.iter())
+                .map(|(&c, &b)| c * b)
+                .collect(),
             Selection::Points(pts) => vec![pts.len() as u64],
         }
     }
@@ -122,7 +132,7 @@ impl Selection {
                 // For each dimension, check if the chunk range overlaps the hyperslab range
                 for d in 0..start.len() {
                     let chunk_start = chunk_offset[d];
-                    let chunk_end = chunk_start + chunk_dims[d] as u64;
+                    let chunk_end = chunk_start + chunk_dims[d];
 
                     // Compute the full extent of the hyperslab in this dimension
                     let sel_start = start[d];
@@ -139,13 +149,11 @@ impl Selection {
                 }
                 true
             }
-            Selection::Points(pts) => {
-                pts.iter().any(|pt| {
-                    pt.iter()
-                        .zip(chunk_offset.iter().zip(chunk_dims.iter()))
-                        .all(|(&p, (&off, &dim))| p >= off && p < off + dim as u64)
-                })
-            }
+            Selection::Points(pts) => pts.iter().any(|pt| {
+                pt.iter()
+                    .zip(chunk_offset.iter().zip(chunk_dims.iter()))
+                    .all(|(&p, (&off, &dim))| p >= off && p < off + dim)
+            }),
         }
     }
 
@@ -156,15 +164,9 @@ impl Selection {
     /// dimension, representing which elements from the chunk contribute to the
     /// output buffer. For simple contiguous slices, this returns exactly one range
     /// per dimension.
-    pub fn chunk_local_ranges(
-        &self,
-        chunk_offset: &[u64],
-        chunk_dims: &[u64],
-    ) -> Vec<Range<u64>> {
+    pub fn chunk_local_ranges(&self, chunk_offset: &[u64], chunk_dims: &[u64]) -> Vec<Range<u64>> {
         match self {
-            Selection::All => {
-                chunk_dims.iter().map(|&d| 0..d as u64).collect()
-            }
+            Selection::All => chunk_dims.iter().map(|&d| 0..d).collect(),
             Selection::None => vec![],
             Selection::Hyperslab {
                 start,
@@ -175,7 +177,7 @@ impl Selection {
                 let mut ranges = Vec::with_capacity(start.len());
                 for d in 0..start.len() {
                     let chunk_start = chunk_offset[d];
-                    let chunk_end = chunk_start + chunk_dims[d] as u64;
+                    let chunk_end = chunk_start + chunk_dims[d];
 
                     // For simple contiguous selections (stride==1, block==1),
                     // just clamp the selection range to the chunk bounds
@@ -188,7 +190,7 @@ impl Selection {
                     } else {
                         // General strided case: find all blocks that overlap this chunk
                         let sel_start = start[d];
-                        let mut min_local = chunk_dims[d] as u64;
+                        let mut min_local = chunk_dims[d];
                         let mut max_local = 0u64;
 
                         for bi in 0..count[d] {
@@ -214,7 +216,7 @@ impl Selection {
             Selection::Points(_) => {
                 // For point selections, return the full chunk range
                 // (filtering happens at the element level)
-                chunk_dims.iter().map(|&d| 0..d as u64).collect()
+                chunk_dims.iter().map(|&d| 0..d).collect()
             }
         }
     }

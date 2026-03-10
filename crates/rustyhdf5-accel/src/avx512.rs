@@ -84,11 +84,7 @@ pub unsafe fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 
     let denom = (norm_a * norm_b).sqrt();
-    if denom == 0.0 {
-        0.0
-    } else {
-        dot / denom
-    }
+    if denom == 0.0 { 0.0 } else { dot / denom }
 }
 
 /// AVX-512 L2 distance.

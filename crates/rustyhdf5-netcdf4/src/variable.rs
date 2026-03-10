@@ -10,7 +10,7 @@ use rustyhdf5::AttrValue;
 use crate::cf::{self, CfAttributes};
 use crate::dimension::Dimension;
 use crate::error::Error;
-use crate::types::{dtype_to_nctype, NcType};
+use crate::types::{NcType, dtype_to_nctype};
 
 /// A NetCDF-4 variable backed by an HDF5 dataset.
 pub struct Variable<'f> {
@@ -26,11 +26,7 @@ pub struct Variable<'f> {
 
 impl<'f> Variable<'f> {
     /// Create a new Variable wrapping an HDF5 dataset.
-    pub(crate) fn new(
-        name: String,
-        dataset: rustyhdf5::Dataset<'f>,
-        dims: Vec<Dimension>,
-    ) -> Self {
+    pub(crate) fn new(name: String, dataset: rustyhdf5::Dataset<'f>, dims: Vec<Dimension>) -> Self {
         Self {
             name,
             dataset,
@@ -142,10 +138,15 @@ impl<'f> Variable<'f> {
                 let vals = self.dataset.read_u64()?;
                 Ok(vals.iter().flat_map(|v| v.to_le_bytes()).collect())
             }
-            _ => {
-                // Fallback: try reading as f64 and convert to bytes
-                let vals = self.dataset.read_f64()?;
-                Ok(vals.iter().flat_map(|v| v.to_le_bytes()).collect())
+            other => {
+                // Unsupported dtype for raw byte reads. Types like compound,
+                // enum, array, or variable-length strings cannot be reliably
+                // reinterpreted as f64 bytes. Return an explicit error rather
+                // than silently producing garbage data.
+                Err(Error::TypeError(format!(
+                    "read_raw does not support dtype {:?}; use a typed read method instead",
+                    other
+                )))
             }
         }
     }
@@ -192,7 +193,10 @@ pub(crate) fn build_variables<'f>(
 /// For each axis of the variable, find a dimension with matching size.
 /// If multiple dimensions have the same size, prefer exact name matching
 /// from the convention order.
-pub(crate) fn match_dimensions_to_variable(shape: &[u64], available_dims: &[Dimension]) -> Vec<Dimension> {
+pub(crate) fn match_dimensions_to_variable(
+    shape: &[u64],
+    available_dims: &[Dimension],
+) -> Vec<Dimension> {
     let mut result = Vec::with_capacity(shape.len());
 
     // Track which dimensions have been used to avoid duplicates

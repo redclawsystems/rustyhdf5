@@ -18,9 +18,9 @@ pub struct LocalHeap {
 
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -80,8 +80,17 @@ impl LocalHeap {
     /// Read a null-terminated string from the heap's data segment at the given byte offset.
     pub fn read_string(&self, file_data: &[u8], string_offset: u64) -> Result<String, FormatError> {
         let seg_addr = self.data_segment_address as usize;
-        let str_start = seg_addr + string_offset as usize;
-        let seg_end = seg_addr + self.data_segment_size as usize;
+        let str_start =
+            seg_addr
+                .checked_add(string_offset as usize)
+                .ok_or(FormatError::Overflow(
+                    "local heap seg_addr + string_offset overflow".into(),
+                ))?;
+        let seg_end = seg_addr
+            .checked_add(self.data_segment_size as usize)
+            .ok_or(FormatError::Overflow(
+                "local heap seg_addr + data_segment_size overflow".into(),
+            ))?;
 
         if str_start >= file_data.len() || str_start >= seg_end {
             return Err(FormatError::UnexpectedEof {

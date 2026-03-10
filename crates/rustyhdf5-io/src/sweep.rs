@@ -64,7 +64,7 @@ pub fn detect_sweep(history: &[ChunkCoord], ndims: usize) -> SweepDirection {
     // For slice-major: a middle dimension changes most often
 
     // Find the dimension that changes in the most consecutive steps
-    let threshold = (num_deltas + 1) / 2; // >50% of steps must show this pattern
+    let threshold = num_deltas.div_ceil(2); // >50% of steps must show this pattern
 
     // Find the single fastest-changing dimension
     let (max_dim, max_changes) = changing_dim_counts
@@ -166,60 +166,35 @@ mod tests {
     #[test]
     fn detect_row_major_2d() {
         // Sweeping along dim 1 (columns) — row-major order
-        let history = vec![
-            vec![0, 0],
-            vec![0, 10],
-            vec![0, 20],
-            vec![0, 30],
-        ];
+        let history = vec![vec![0, 0], vec![0, 10], vec![0, 20], vec![0, 30]];
         assert_eq!(detect_sweep(&history, 2), SweepDirection::RowMajor);
     }
 
     #[test]
     fn detect_column_major_2d() {
         // Sweeping along dim 0 (rows) — column-major order
-        let history = vec![
-            vec![0, 0],
-            vec![10, 0],
-            vec![20, 0],
-            vec![30, 0],
-        ];
+        let history = vec![vec![0, 0], vec![10, 0], vec![20, 0], vec![30, 0]];
         assert_eq!(detect_sweep(&history, 2), SweepDirection::ColumnMajor);
     }
 
     #[test]
     fn detect_row_major_3d() {
         // In 3D, row-major means the last dim (dim 2) changes fastest
-        let history = vec![
-            vec![0, 0, 0],
-            vec![0, 0, 4],
-            vec![0, 0, 8],
-            vec![0, 0, 12],
-        ];
+        let history = vec![vec![0, 0, 0], vec![0, 0, 4], vec![0, 0, 8], vec![0, 0, 12]];
         assert_eq!(detect_sweep(&history, 3), SweepDirection::RowMajor);
     }
 
     #[test]
     fn detect_column_major_3d() {
         // In 3D, column-major means dim 0 changes fastest
-        let history = vec![
-            vec![0, 0, 0],
-            vec![4, 0, 0],
-            vec![8, 0, 0],
-            vec![12, 0, 0],
-        ];
+        let history = vec![vec![0, 0, 0], vec![4, 0, 0], vec![8, 0, 0], vec![12, 0, 0]];
         assert_eq!(detect_sweep(&history, 3), SweepDirection::ColumnMajor);
     }
 
     #[test]
     fn detect_slice_major_3d() {
         // Middle dim (dim 1) changes fastest — SliceMajor(1)
-        let history = vec![
-            vec![0, 0, 0],
-            vec![0, 4, 0],
-            vec![0, 8, 0],
-            vec![0, 12, 0],
-        ];
+        let history = vec![vec![0, 0, 0], vec![0, 4, 0], vec![0, 8, 0], vec![0, 12, 0]];
         assert_eq!(detect_sweep(&history, 3), SweepDirection::SliceMajor(1));
     }
 
@@ -249,11 +224,7 @@ mod tests {
 
     #[test]
     fn predict_row_major_2d() {
-        let history = vec![
-            vec![0, 0],
-            vec![0, 10],
-            vec![0, 20],
-        ];
+        let history = vec![vec![0, 0], vec![0, 10], vec![0, 20]];
         let predictions = predict_next(&history, SweepDirection::RowMajor, 3);
         assert_eq!(predictions.len(), 3);
         assert_eq!(predictions[0], vec![0, 30]);
@@ -263,11 +234,7 @@ mod tests {
 
     #[test]
     fn predict_column_major_2d() {
-        let history = vec![
-            vec![0, 0],
-            vec![10, 0],
-            vec![20, 0],
-        ];
+        let history = vec![vec![0, 0], vec![10, 0], vec![20, 0]];
         let predictions = predict_next(&history, SweepDirection::ColumnMajor, 2);
         assert_eq!(predictions.len(), 2);
         assert_eq!(predictions[0], vec![30, 0]);
@@ -290,11 +257,7 @@ mod tests {
 
     #[test]
     fn predict_slice_major_3d() {
-        let history = vec![
-            vec![0, 0, 0],
-            vec![0, 4, 0],
-            vec![0, 8, 0],
-        ];
+        let history = vec![vec![0, 0, 0], vec![0, 4, 0], vec![0, 8, 0]];
         let predictions = predict_next(&history, SweepDirection::SliceMajor(1), 2);
         assert_eq!(predictions.len(), 2);
         assert_eq!(predictions[0], vec![0, 12, 0]);
@@ -303,12 +266,7 @@ mod tests {
 
     #[test]
     fn detect_and_predict_roundtrip() {
-        let history = vec![
-            vec![0, 0, 0],
-            vec![0, 0, 8],
-            vec![0, 0, 16],
-            vec![0, 0, 24],
-        ];
+        let history = vec![vec![0, 0, 0], vec![0, 0, 8], vec![0, 0, 16], vec![0, 0, 24]];
         let direction = detect_sweep(&history, 3);
         assert_eq!(direction, SweepDirection::RowMajor);
 
@@ -333,12 +291,7 @@ mod tests {
     #[test]
     fn false_positive_avoidance_diagonal() {
         // Diagonal traversal — both dims change every step
-        let history = vec![
-            vec![0, 0],
-            vec![10, 10],
-            vec![20, 20],
-            vec![30, 30],
-        ];
+        let history = vec![vec![0, 0], vec![10, 10], vec![20, 20], vec![30, 30]];
         assert_eq!(detect_sweep(&history, 2), SweepDirection::Random);
     }
 }

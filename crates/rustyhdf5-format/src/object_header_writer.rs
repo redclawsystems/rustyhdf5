@@ -8,7 +8,7 @@ use crate::message_type::MessageType;
 
 /// Writer for v2 object headers with proper checksums.
 pub struct ObjectHeaderWriter {
-    messages: Vec<(MessageType, Vec<u8>, u8)>,  // (type, data, msg_flags)
+    messages: Vec<(MessageType, Vec<u8>, u8)>, // (type, data, msg_flags)
 }
 
 impl ObjectHeaderWriter {
@@ -32,7 +32,9 @@ impl ObjectHeaderWriter {
     /// Serialize the complete v2 object header (OHDR + messages + checksum).
     pub fn serialize(&self) -> Vec<u8> {
         // Calculate total message bytes: each message has type(1) + size(2) + flags(1) + data
-        let msg_bytes_total: usize = self.messages.iter()
+        let msg_bytes_total: usize = self
+            .messages
+            .iter()
             .map(|(_, data, _)| 4 + data.len())
             .sum();
 
@@ -58,12 +60,17 @@ impl ObjectHeaderWriter {
             1 => buf.push(msg_bytes_total as u8),
             2 => buf.extend_from_slice(&(msg_bytes_total as u16).to_le_bytes()),
             4 => buf.extend_from_slice(&(msg_bytes_total as u32).to_le_bytes()),
-            _ => {}
+            _ => unreachable!("unexpected chunk_size_width: {chunk_size_width}"),
         }
 
         // Messages
         for (msg_type, data, msg_flags) in &self.messages {
-            buf.push(msg_type.to_u16() as u8); // type (1 byte in v2)
+            let type_id = msg_type.to_u16();
+            assert!(
+                type_id <= 255,
+                "v2 object header message type {type_id:#06x} exceeds u8 range (max 0xFF)"
+            );
+            buf.push(type_id as u8); // type (1 byte in v2)
             buf.extend_from_slice(&(data.len() as u16).to_le_bytes()); // size (2 bytes)
             buf.push(*msg_flags); // flags
             buf.extend_from_slice(data);
@@ -83,19 +90,14 @@ impl Default for ObjectHeaderWriter {
     }
 }
 
-/// A deferred header entry for batch writing.
-struct DeferredHeader {
-    writer: ObjectHeaderWriter,
-}
-
 /// Batch writer that collects multiple object headers in memory and flushes
 /// them as a single contiguous I/O pass.
 ///
 /// This reduces the number of serialization passes when creating many datasets
-/// in parallel — each thread builds its `ObjectHeaderWriter` independently,
+/// in parallel -- each thread builds its `ObjectHeaderWriter` independently,
 /// then all headers are serialized together.
 pub struct BatchObjectHeaderWriter {
-    headers: Vec<DeferredHeader>,
+    headers: Vec<ObjectHeaderWriter>,
 }
 
 impl BatchObjectHeaderWriter {
@@ -108,7 +110,7 @@ impl BatchObjectHeaderWriter {
 
     /// Add a pre-built ObjectHeaderWriter to the batch.
     pub fn add(&mut self, writer: ObjectHeaderWriter) {
-        self.headers.push(DeferredHeader { writer });
+        self.headers.push(writer);
     }
 
     /// Number of headers in the batch.
@@ -124,17 +126,14 @@ impl BatchObjectHeaderWriter {
     /// Compute the serialized size of each header without actually serializing.
     /// Returns sizes in the same order as headers were added.
     pub fn compute_sizes(&self) -> Vec<usize> {
-        self.headers
-            .iter()
-            .map(|h| h.writer.serialize().len())
-            .collect()
+        self.headers.iter().map(|h| h.serialize().len()).collect()
     }
 
     /// Serialize all headers into a single contiguous buffer.
     /// Returns `(combined_bytes, offsets)` where `offsets[i]` is the byte
     /// offset of header `i` within the combined buffer.
     pub fn serialize_all(&self) -> (Vec<u8>, Vec<usize>) {
-        let serialized: Vec<Vec<u8>> = self.headers.iter().map(|h| h.writer.serialize()).collect();
+        let serialized: Vec<Vec<u8>> = self.headers.iter().map(|h| h.serialize()).collect();
         let total: usize = serialized.iter().map(|s| s.len()).sum();
         let mut buf = Vec::with_capacity(total);
         let mut offsets = Vec::with_capacity(serialized.len());

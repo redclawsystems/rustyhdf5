@@ -1,10 +1,15 @@
 use rustyhdf5_format::attribute::{extract_attributes, extract_attributes_full, find_attribute};
 use rustyhdf5_format::data_layout::DataLayout;
-use rustyhdf5_format::data_read::{read_as_f64, read_as_f32, read_as_i32, read_as_i64, read_as_u64, read_as_strings, read_raw_data, read_raw_data_full};
+use rustyhdf5_format::data_read::{
+    read_as_f32, read_as_f64, read_as_i32, read_as_i64, read_as_strings, read_as_u64,
+    read_raw_data, read_raw_data_full,
+};
 use rustyhdf5_format::dataspace::Dataspace;
 use rustyhdf5_format::datatype::Datatype;
 use rustyhdf5_format::file_writer::{AttrValue, FileWriter};
-use rustyhdf5_format::filter_pipeline::{FilterPipeline, FILTER_DEFLATE, FILTER_FLETCHER32, FILTER_SHUFFLE};
+use rustyhdf5_format::filter_pipeline::{
+    FILTER_DEFLATE, FILTER_FLETCHER32, FILTER_SHUFFLE, FilterPipeline,
+};
 use rustyhdf5_format::group_v2::resolve_path_any;
 use rustyhdf5_format::message_type::MessageType;
 use rustyhdf5_format::object_header::ObjectHeader;
@@ -38,23 +43,43 @@ fn read_chunked_dataset(file_data: &[u8], dataset_path: &str) -> (Vec<u8>, Datat
     let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size)
         .expect("failed to parse object header");
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
 
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
 
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
-    let pipeline = hdr.messages.iter()
+    let pipeline = hdr
+        .messages
+        .iter()
         .find(|m| m.msg_type == MessageType::FilterPipeline)
         .map(|m| FilterPipeline::parse(&m.data).unwrap());
 
     let raw = read_raw_data_full(
-        file_data, &layout, &dataspace, &datatype,
-        pipeline.as_ref(), sb.offset_size, sb.length_size,
-    ).unwrap();
+        file_data,
+        &layout,
+        &dataspace,
+        &datatype,
+        pipeline.as_ref(),
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
     (raw, datatype, dataspace)
 }
@@ -65,21 +90,45 @@ fn read_dataset_f64_any(bytes: &[u8], path: &str) -> Vec<f64> {
     let sb = Superblock::parse(bytes, sig).unwrap();
     let addr = resolve_path_any(bytes, &sb, path).unwrap();
     let hdr = ObjectHeader::parse(bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
 
     match &dl {
         DataLayout::Chunked { .. } => {
-            let pipeline = hdr.messages.iter()
+            let pipeline = hdr
+                .messages
+                .iter()
                 .find(|m| m.msg_type == MessageType::FilterPipeline)
                 .map(|m| FilterPipeline::parse(&m.data).unwrap());
             let raw = rustyhdf5_format::chunked_read::read_chunked_data(
-                bytes, &dl, &ds, &dt, pipeline.as_ref(), sb.offset_size, sb.length_size,
-            ).unwrap();
+                bytes,
+                &dl,
+                &ds,
+                &dt,
+                pipeline.as_ref(),
+                sb.offset_size,
+                sb.length_size,
+            )
+            .unwrap();
             read_as_f64(&raw, &dt).unwrap()
         }
         _ => {
@@ -95,9 +144,24 @@ fn read_dataset_i32_any(bytes: &[u8], path: &str) -> Vec<i32> {
     let sb = Superblock::parse(bytes, sig).unwrap();
     let addr = resolve_path_any(bytes, &sb, path).unwrap();
     let hdr = ObjectHeader::parse(bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
@@ -133,7 +197,10 @@ fn parse_minimal_v2_object_header() {
     let hdr = ObjectHeader::parse(data, root_addr, sb.offset_size, sb.length_size)
         .expect("failed to parse root group object header");
     assert!(hdr.version == 1 || hdr.version == 2);
-    assert!(!hdr.messages.is_empty(), "root group object header has no messages");
+    assert!(
+        !hdr.messages.is_empty(),
+        "root group object header has no messages"
+    );
 }
 
 #[test]
@@ -145,7 +212,10 @@ fn parse_simple_dataset_object_header() {
     let hdr = ObjectHeader::parse(data, root_addr, sb.offset_size, sb.length_size)
         .expect("failed to parse root group object header");
     assert!(hdr.version == 1 || hdr.version == 2);
-    assert!(!hdr.messages.is_empty(), "root group object header has no messages");
+    assert!(
+        !hdr.messages.is_empty(),
+        "root group object header has no messages"
+    );
 }
 
 #[test]
@@ -174,15 +244,27 @@ fn read_simple_dataset_values() {
     let hdr = ObjectHeader::parse(file_data, dataset_offset, sb.offset_size, sb.length_size)
         .expect("failed to parse dataset object header");
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
     assert_eq!(dataspace.dimensions, vec![3]);
 
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
     assert_eq!(datatype.type_size(), 8);
 
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
     match &layout {
         DataLayout::Contiguous { address, size } => {
@@ -208,7 +290,13 @@ fn attrs_h5_dataset_description() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let desc = find_attribute(&attrs, "description").expect("description attr not found");
@@ -223,7 +311,13 @@ fn attrs_h5_dataset_version() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let version_attr = find_attribute(&attrs, "version").expect("version attr not found");
@@ -238,7 +332,13 @@ fn attrs_h5_dataset_scale() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let scale_attr = find_attribute(&attrs, "scale").expect("scale attr not found");
@@ -269,7 +369,8 @@ fn mixed_attrs_h5_temperatures() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let exp_addr = resolve_path_any(file_data, &sb, "experiment").unwrap();
-    let hdr = ObjectHeader::parse(file_data, exp_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, exp_addr as usize, sb.offset_size, sb.length_size).unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let temp = find_attribute(&attrs, "temperatures").expect("temperatures attr not found");
@@ -287,7 +388,8 @@ fn mixed_attrs_h5_name() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let exp_addr = resolve_path_any(file_data, &sb, "experiment").unwrap();
-    let hdr = ObjectHeader::parse(file_data, exp_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, exp_addr as usize, sb.offset_size, sb.length_size).unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let name_attr = find_attribute(&attrs, "name").expect("name attr not found");
@@ -302,7 +404,8 @@ fn mixed_attrs_h5_iterations() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let exp_addr = resolve_path_any(file_data, &sb, "experiment").unwrap();
-    let hdr = ObjectHeader::parse(file_data, exp_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, exp_addr as usize, sb.offset_size, sb.length_size).unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let iter_attr = find_attribute(&attrs, "iterations").expect("iterations attr not found");
@@ -321,26 +424,49 @@ fn vl_strings_h5_names_dataset() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let names_addr = resolve_path_any(file_data, &sb, "names").unwrap();
-    let hdr = ObjectHeader::parse(file_data, names_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        names_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
     assert_eq!(dataspace.num_elements(), 3);
 
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
     match &datatype {
         Datatype::VariableLength { is_string, .. } => assert!(is_string),
         other => panic!("expected VL string type, got {other:?}"),
     }
 
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
 
     let strings = rustyhdf5_format::vl_data::read_vl_strings(
-        file_data, &raw, dataspace.num_elements(), sb.offset_size, sb.length_size,
-    ).unwrap();
+        file_data,
+        &raw,
+        dataspace.num_elements(),
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     assert_eq!(strings, vec!["Alice", "Bob", "Charlie"]);
 }
 
@@ -355,7 +481,9 @@ fn vl_strings_h5_root_vl_attr() {
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
 
     let vl_attr = find_attribute(&attrs, "vl_attr").expect("vl_attr not found");
-    let strings = vl_attr.read_vl_strings(file_data, sb.offset_size, sb.length_size).unwrap();
+    let strings = vl_attr
+        .read_vl_strings(file_data, sb.offset_size, sb.length_size)
+        .unwrap();
     assert_eq!(strings.len(), 1);
     assert_eq!(strings[0], "hello variable length");
 }
@@ -369,7 +497,11 @@ fn fixture_chunked_deflate_filter_pipeline() {
     let file_data = include_bytes!("fixtures/chunked_deflate.h5");
     let fp = parse_filter_pipeline_from_fixture(file_data, "data");
     assert!(fp.filters.iter().any(|f| f.filter_id == FILTER_DEFLATE));
-    let deflate = fp.filters.iter().find(|f| f.filter_id == FILTER_DEFLATE).unwrap();
+    let deflate = fp
+        .filters
+        .iter()
+        .find(|f| f.filter_id == FILTER_DEFLATE)
+        .unwrap();
     assert_eq!(deflate.client_data, vec![6]);
 }
 
@@ -459,7 +591,11 @@ fn chunked_2d_read_values() {
     let values = read_as_f32(&raw, &datatype).unwrap();
     assert_eq!(values.len(), 60);
     for i in 0..60 {
-        assert!((values[i] - i as f32).abs() < 1e-6, "mismatch at index {i}: got {}", values[i]);
+        assert!(
+            (values[i] - i as f32).abs() < 1e-6,
+            "mismatch at index {i}: got {}",
+            values[i]
+        );
     }
 }
 
@@ -534,7 +670,11 @@ fn v4_2d_fixed_array_read() {
     let values = read_as_f32(&raw, &datatype).unwrap();
     assert_eq!(values.len(), 60);
     for i in 0..60 {
-        assert!((values[i] - i as f32).abs() < 1e-6, "mismatch at index {i}: got {}", values[i]);
+        assert!(
+            (values[i] - i as f32).abs() < 1e-6,
+            "mismatch at index {i}: got {}",
+            values[i]
+        );
     }
 }
 
@@ -566,13 +706,26 @@ fn v1_two_groups_read_group1_values() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "group1/values").unwrap();
-    let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
@@ -586,13 +739,26 @@ fn v1_two_groups_read_group2_temps() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "group2/temps").unwrap();
-    let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
@@ -607,7 +773,10 @@ fn v1_nested_groups_deep_path() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "a/b/c/deep");
-    assert!(addr.is_ok(), "should resolve a/b/c/deep in nested_groups.h5");
+    assert!(
+        addr.is_ok(),
+        "should resolve a/b/c/deep in nested_groups.h5"
+    );
 }
 
 #[test]
@@ -616,13 +785,26 @@ fn v1_nested_groups_read_deep_dataset() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "a/b/c/deep").unwrap();
-    let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
@@ -640,7 +822,10 @@ fn v2_groups_resolve_sensor_temperature() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "sensors/temperature");
-    assert!(addr.is_ok(), "should resolve sensors/temperature in v2_groups.h5");
+    assert!(
+        addr.is_ok(),
+        "should resolve sensors/temperature in v2_groups.h5"
+    );
 }
 
 #[test]
@@ -649,13 +834,26 @@ fn v2_groups_read_temperature_values() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "sensors/temperature").unwrap();
-    let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
@@ -669,13 +867,26 @@ fn v2_groups_read_humidity_values() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "sensors/humidity").unwrap();
-    let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
@@ -689,13 +900,26 @@ fn v2_many_links_resolve_dataset() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
     let addr = resolve_path_any(file_data, &sb, "dataset_015").unwrap();
-    let hdr = ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(file_data, addr as usize, sb.offset_size, sb.length_size).unwrap();
 
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
     let (datatype, _) = Datatype::parse(&dt_msg.data).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
 
     let raw = read_raw_data(file_data, &layout, &dataspace, &datatype).unwrap();
@@ -731,9 +955,24 @@ fn write_roundtrip_f32_dataset() {
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let addr = resolve_path_any(&bytes, &sb, "data").unwrap();
     let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
@@ -745,8 +984,7 @@ fn write_roundtrip_f32_dataset() {
 #[test]
 fn write_roundtrip_i32_dataset() {
     let mut fw = FileWriter::new();
-    fw.create_dataset("ints")
-        .with_i32_data(&[10, 20, 30, 40]);
+    fw.create_dataset("ints").with_i32_data(&[10, 20, 30, 40]);
     let bytes = fw.finish().unwrap();
     let values = read_dataset_i32_any(&bytes, "ints");
     assert_eq!(values, vec![10, 20, 30, 40]);
@@ -755,17 +993,31 @@ fn write_roundtrip_i32_dataset() {
 #[test]
 fn write_roundtrip_i64_dataset() {
     let mut fw = FileWriter::new();
-    fw.create_dataset("longs")
-        .with_i64_data(&[100, 200, 300]);
+    fw.create_dataset("longs").with_i64_data(&[100, 200, 300]);
     let bytes = fw.finish().unwrap();
 
     let sig = find_signature(&bytes).unwrap();
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let addr = resolve_path_any(&bytes, &sb, "longs").unwrap();
     let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
@@ -777,17 +1029,31 @@ fn write_roundtrip_i64_dataset() {
 #[test]
 fn write_roundtrip_u8_dataset() {
     let mut fw = FileWriter::new();
-    fw.create_dataset("bytes")
-        .with_u8_data(&[0, 127, 255]);
+    fw.create_dataset("bytes").with_u8_data(&[0, 127, 255]);
     let bytes = fw.finish().unwrap();
 
     let sig = find_signature(&bytes).unwrap();
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let addr = resolve_path_any(&bytes, &sb, "bytes").unwrap();
     let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
@@ -884,7 +1150,13 @@ fn write_roundtrip_root_attr() {
 
     let sig = find_signature(&bytes).unwrap();
     let sb = Superblock::parse(&bytes, sig).unwrap();
-    let hdr = ObjectHeader::parse(&bytes, sb.root_group_address as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        &bytes,
+        sb.root_group_address as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
     let fmt = find_attribute(&attrs, "file_format").expect("file_format attr not found");
     let s = fmt.read_as_string().unwrap();
@@ -1077,7 +1349,8 @@ fn write_roundtrip_group_with_attrs() {
     let sig = find_signature(&bytes).unwrap();
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let grp_addr = resolve_path_any(&bytes, &sb, "experiment").unwrap();
-    let hdr = ObjectHeader::parse(&bytes, grp_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr =
+        ObjectHeader::parse(&bytes, grp_addr as usize, sb.offset_size, sb.length_size).unwrap();
     let attrs = extract_attributes(&hdr, sb.length_size).unwrap();
     let name = find_attribute(&attrs, "name").expect("name attr not found");
     let s = name.read_as_string().unwrap();
@@ -1139,16 +1412,42 @@ fn write_roundtrip_large_chunked_i32() {
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let addr = resolve_path_any(&bytes, &sb, "big").unwrap();
     let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
-    let pipeline = hdr.messages.iter()
+    let pipeline = hdr
+        .messages
+        .iter()
         .find(|m| m.msg_type == MessageType::FilterPipeline)
         .map(|m| FilterPipeline::parse(&m.data).unwrap());
-    let raw = read_raw_data_full(&bytes, &dl, &ds, &dt, pipeline.as_ref(), sb.offset_size, sb.length_size).unwrap();
+    let raw = read_raw_data_full(
+        &bytes,
+        &dl,
+        &ds,
+        &dt,
+        pipeline.as_ref(),
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let values = read_as_i32(&raw, &dt).unwrap();
     assert_eq!(values.len(), 5000);
     assert_eq!(values[0], 0);
@@ -1166,11 +1465,23 @@ fn dense_attrs_dataset_count() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
     // Should have an AttributeInfo message since >8 attrs triggers dense storage
-    let has_attr_info = hdr.messages.iter().any(|m| m.msg_type == MessageType::AttributeInfo);
-    assert!(has_attr_info, "expected AttributeInfo message for dense attributes");
+    let has_attr_info = hdr
+        .messages
+        .iter()
+        .any(|m| m.msg_type == MessageType::AttributeInfo);
+    assert!(
+        has_attr_info,
+        "expected AttributeInfo message for dense attributes"
+    );
 
     let attrs = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
     assert_eq!(attrs.len(), 50, "expected 50 dense attributes");
@@ -1183,13 +1494,23 @@ fn dense_attrs_dataset_first_attr() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
 
     let attr_000 = find_attribute(&attrs, "attr_000").expect("attr_000 not found");
     let vals = attr_000.read_as_f64().unwrap();
     assert_eq!(vals.len(), 1);
-    assert!((vals[0] - 0.0).abs() < 1e-10, "attr_000 should be 0.0, got {}", vals[0]);
+    assert!(
+        (vals[0] - 0.0).abs() < 1e-10,
+        "attr_000 should be 0.0, got {}",
+        vals[0]
+    );
 }
 
 #[test]
@@ -1199,13 +1520,23 @@ fn dense_attrs_dataset_middle_attr() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
 
     let attr_025 = find_attribute(&attrs, "attr_025").expect("attr_025 not found");
     let vals = attr_025.read_as_f64().unwrap();
     assert_eq!(vals.len(), 1);
-    assert!((vals[0] - 37.5).abs() < 1e-10, "attr_025 should be 37.5, got {}", vals[0]);
+    assert!(
+        (vals[0] - 37.5).abs() < 1e-10,
+        "attr_025 should be 37.5, got {}",
+        vals[0]
+    );
 }
 
 #[test]
@@ -1215,13 +1546,23 @@ fn dense_attrs_dataset_last_attr() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
 
     let attr_049 = find_attribute(&attrs, "attr_049").expect("attr_049 not found");
     let vals = attr_049.read_as_f64().unwrap();
     assert_eq!(vals.len(), 1);
-    assert!((vals[0] - 73.5).abs() < 1e-10, "attr_049 should be 73.5, got {}", vals[0]);
+    assert!(
+        (vals[0] - 73.5).abs() < 1e-10,
+        "attr_049 should be 73.5, got {}",
+        vals[0]
+    );
 }
 
 #[test]
@@ -1231,7 +1572,13 @@ fn dense_attrs_dataset_all_values_correct() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
 
     for i in 0..50 {
@@ -1253,7 +1600,13 @@ fn dense_attrs_root_group() {
     let offset = find_signature(file_data).unwrap();
     let sb = Superblock::parse(file_data, offset).unwrap();
 
-    let hdr = ObjectHeader::parse(file_data, sb.root_group_address as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        sb.root_group_address as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     let attrs = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
     assert_eq!(attrs.len(), 20, "expected 20 root group dense attributes");
 
@@ -1274,11 +1627,18 @@ fn dense_attrs_compact_still_works() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
     // extract_attributes_full should return the same results as extract_attributes for compact
     let attrs_compact = extract_attributes(&hdr, sb.length_size).unwrap();
-    let attrs_full = extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
+    let attrs_full =
+        extract_attributes_full(file_data, &hdr, sb.offset_size, sb.length_size).unwrap();
     assert_eq!(attrs_compact.len(), attrs_full.len());
 
     let desc = find_attribute(&attrs_full, "description").expect("description not found");
@@ -1293,11 +1653,29 @@ fn dense_attrs_dataset_data_still_readable() {
     let sb = Superblock::parse(file_data, offset).unwrap();
 
     let data_addr = resolve_path_any(file_data, &sb, "data").unwrap();
-    let hdr = ObjectHeader::parse(file_data, data_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let hdr = ObjectHeader::parse(
+        file_data,
+        data_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
-    let dt_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap();
-    let ds_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap();
-    let dl_msg = hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap();
+    let dt_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap();
+    let ds_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap();
+    let dl_msg = hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap();
     let (dt, _) = Datatype::parse(&dt_msg.data).unwrap();
     let ds = Dataspace::parse(&ds_msg.data, sb.length_size).unwrap();
     let dl = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size).unwrap();
@@ -1305,4 +1683,3 @@ fn dense_attrs_dataset_data_still_readable() {
     let values = read_as_f64(&raw, &dt).unwrap();
     assert_eq!(values, vec![1.0, 2.0, 3.0]);
 }
-

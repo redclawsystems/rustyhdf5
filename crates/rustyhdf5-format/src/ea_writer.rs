@@ -44,14 +44,14 @@ pub(crate) fn serialize_v4_extensible_array(
             1 => buf.push(d as u8),
             2 => buf.extend_from_slice(&(d as u16).to_le_bytes()),
             4 => buf.extend_from_slice(&d.to_le_bytes()),
-            _ => {}
+            _ => unreachable!("unexpected dim_encoded_len: {dim_encoded_len}"),
         }
     }
     match dim_encoded_len {
         1 => buf.push(element_size as u8),
         2 => buf.extend_from_slice(&(element_size as u16).to_le_bytes()),
         4 => buf.extend_from_slice(&element_size.to_le_bytes()),
-        _ => {}
+        _ => unreachable!("unexpected dim_encoded_len: {dim_encoded_len}"),
     }
 
     // chunk index type = 4 (Extensible Array)
@@ -68,7 +68,7 @@ pub(crate) fn serialize_v4_extensible_array(
     match offset_size {
         4 => buf.extend_from_slice(&(ea_address as u32).to_le_bytes()),
         8 => buf.extend_from_slice(&ea_address.to_le_bytes()),
-        _ => {}
+        _ => unreachable!("unexpected offset size: {offset_size}"),
     }
 
     buf
@@ -119,8 +119,7 @@ pub fn build_extensible_array_at(
     let max_dblk_nelmts_bits: u8 = 10;
 
     // EAHD size: fixed(12) + 6 stats(6*length_size) + addr(offset_size) + checksum(4)
-    let aehd_size = 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
-        + 6 * length_size as usize + os + 4;
+    let aehd_size = 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 6 * length_size as usize + os + 4;
     let aeib_address = ea_base_address + aehd_size as u64;
 
     // Determine how many elements go inline vs data blocks
@@ -129,7 +128,11 @@ pub fn build_extensible_array_at(
 
     // Compute super block layout per HDF5 spec
     let sblk_min = super_blk_min_nelmts as usize;
-    let log2_dblk_min = if min_dblk_nelmts <= 1 { 0 } else { (min_dblk_nelmts as u32).trailing_zeros() as usize };
+    let log2_dblk_min = if min_dblk_nelmts <= 1 {
+        0
+    } else {
+        (min_dblk_nelmts as u32).trailing_zeros() as usize
+    };
     let nsblks = (max_nelmts_bits as usize).saturating_sub(log2_dblk_min) + 1;
 
     // Direct data block addresses (from super blocks 0..sblk_min-1)
@@ -147,7 +150,10 @@ pub fn build_extensible_array_at(
     let n_sblk_addrs = nsblks.saturating_sub(sblk_min);
 
     // EAIB size
-    let aeib_size = 4 + 1 + 1 + os
+    let aeib_size = 4
+        + 1
+        + 1
+        + os
         + idx_blk_elmts as usize * elem_size
         + n_direct_dblks * os
         + n_sblk_addrs * os
@@ -179,7 +185,8 @@ pub fn build_extensible_array_at(
     } else {
         0
     };
-    let aedb_header_overhead = 4 + 1 + 1 + os + 4;
+    let blk_off_size = (max_nelmts_bits as usize).div_ceil(8);
+    let aedb_header_overhead = 4 + 1 + 1 + os + blk_off_size + 4;
     let data_blk_total_size: u64 = if remaining_after_inline > 0 {
         let mut total = 0u64;
         let mut ci = n_inline;
@@ -207,17 +214,13 @@ pub fn build_extensible_array_at(
         idx_blk_elmts as u64
     };
 
-    let write_length = |buf: &mut Vec<u8>, val: u64| {
-        match length_size {
-            4 => buf.extend_from_slice(&(val as u32).to_le_bytes()),
-            _ => buf.extend_from_slice(&val.to_le_bytes()),
-        }
+    let write_length = |buf: &mut Vec<u8>, val: u64| match length_size {
+        4 => buf.extend_from_slice(&(val as u32).to_le_bytes()),
+        _ => buf.extend_from_slice(&val.to_le_bytes()),
     };
-    let write_addr = |buf: &mut Vec<u8>, val: u64| {
-        match offset_size {
-            4 => buf.extend_from_slice(&(val as u32).to_le_bytes()),
-            _ => buf.extend_from_slice(&val.to_le_bytes()),
-        }
+    let write_addr = |buf: &mut Vec<u8>, val: u64| match offset_size {
+        4 => buf.extend_from_slice(&(val as u32).to_le_bytes()),
+        _ => buf.extend_from_slice(&val.to_le_bytes()),
     };
 
     write_length(&mut aehd, 0);
@@ -249,7 +252,13 @@ pub fn build_extensible_array_at(
     #[allow(clippy::needless_range_loop)]
     for i in 0..idx_blk_elmts as usize {
         if i < n_inline {
-            write_chunk_element(&mut aeib, &chunks[i], offset_size, has_filters, chunk_size_bytes);
+            write_chunk_element(
+                &mut aeib,
+                &chunks[i],
+                offset_size,
+                has_filters,
+                chunk_size_bytes,
+            );
         } else {
             write_undefined_element(&mut aeib, offset_size, has_filters, chunk_size_bytes);
         }
@@ -359,9 +368,10 @@ fn write_undefined_element(
     chunk_size_bytes: usize,
 ) {
     let os = offset_size as usize;
-    buf.extend_from_slice(&vec![0xFF; os]);
+    // Use extend with repeat to avoid heap-allocating a temporary Vec on each call.
+    buf.extend(core::iter::repeat_n(0xFF, os));
     if has_filters {
-        buf.extend_from_slice(&vec![0x00; chunk_size_bytes]);
+        buf.extend(core::iter::repeat_n(0x00, chunk_size_bytes));
         buf.extend_from_slice(&0u32.to_le_bytes());
     }
 }

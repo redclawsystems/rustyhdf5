@@ -1,6 +1,6 @@
 //! Benchmarks comparing FileReader vs MmapReader and Eager vs Lazy file opening.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rustyhdf5::{FileBuilder, LazyFile};
 use rustyhdf5_io::{FileReader, MemoryReader, MmapReader};
 
@@ -290,20 +290,19 @@ fn bench_zerocopy_vs_copy_f64(c: &mut Criterion) {
     let file = rustyhdf5::File::open(&path).unwrap();
 
     c.bench_function("read_f64_copy_1M", |b| {
-        b.iter(|| {
-            file.dataset("data").unwrap().read_f64().unwrap()
-        })
+        b.iter(|| file.dataset("data").unwrap().read_f64().unwrap())
     });
 
     c.bench_function("read_f64_zerocopy_1M", |b| {
-        b.iter(|| {
-            file.dataset("data").unwrap().read_f64_zerocopy().unwrap()
-        })
+        b.iter(|| file.dataset("data").unwrap().read_f64_zerocopy().unwrap())
     });
 
     c.bench_function("read_as_slice_f64_1M", |b| {
         b.iter(|| {
-            file.dataset("data").unwrap().read_as_slice::<f64>().unwrap()
+            file.dataset("data")
+                .unwrap()
+                .read_as_slice::<f64>()
+                .unwrap()
         })
     });
 

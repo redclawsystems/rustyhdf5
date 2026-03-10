@@ -24,7 +24,7 @@ use rustyhdf5_format::superblock::Superblock;
 use rustyhdf5_format::symbol_table::SymbolTableMessage;
 
 use crate::error::Error;
-use crate::types::{attrs_to_map, classify_datatype, AttrValue, DType};
+use crate::types::{AttrValue, DType, attrs_to_map, classify_datatype};
 
 // ---------------------------------------------------------------------------
 // FileData — internal storage for either owned bytes or an mmap
@@ -284,12 +284,8 @@ impl<'f> Group<'f> {
     pub fn attrs(&self) -> Result<HashMap<String, AttrValue>, Error> {
         let data = self.file.data.as_bytes();
         let hdr = self.file.parse_header(self.address)?;
-        let attr_msgs = extract_attributes_full(
-            data,
-            &hdr,
-            self.file.offset_size(),
-            self.file.length_size(),
-        )?;
+        let attr_msgs =
+            extract_attributes_full(data, &hdr, self.file.offset_size(), self.file.length_size())?;
         Ok(attrs_to_map(
             &attr_msgs,
             data,
@@ -371,6 +367,8 @@ impl<'f> Dataset<'f> {
     /// Zero-copy read of contiguous native-endian `f64` data.
     ///
     /// Returns `Some(&[f64])` when the dataset is contiguous and stored as
+    /// native-endian 8-byte IEEE 754 floats; `None` otherwise.
+    ///
     /// Read all data as `f32` values.
     pub fn read_f32(&self) -> Result<Vec<f32>, Error> {
         let raw = self.read_raw()?;
@@ -481,12 +479,7 @@ impl<'f> Dataset<'f> {
         let dl = self.data_layout()?;
         let ds = self.dataspace()?;
         let dt = self.datatype()?;
-        let slice = data_read::read_raw_data_zerocopy(
-            self.file.data.as_bytes(),
-            &dl,
-            &ds,
-            &dt,
-        )?;
+        let slice = data_read::read_raw_data_zerocopy(self.file.data.as_bytes(), &dl, &ds, &dt)?;
         Ok(slice)
     }
 
@@ -498,12 +491,14 @@ impl<'f> Dataset<'f> {
     ///
     /// Returns `None` if the layout is not contiguous (compact/chunked).
     ///
-    /// # Safety contract
+    /// # Safety invariant
     ///
-    /// This is safe because it validates alignment and size before
-    /// reinterpreting the bytes. `T` must be a plain-old-data type
-    /// (no padding, no drop). Use only with primitive numeric types
-    /// like `f64`, `f32`, `i32`, `u64`, etc.
+    /// T must have no padding bytes (e.g., f64, f32, i64, i32, u64, u32).
+    /// Types with padding may expose uninitialized memory. The bound
+    /// `T: Copy + 'static` is necessary but not sufficient — callers must
+    /// ensure T is a plain primitive numeric type with no internal padding.
+    /// Adding a `bytemuck::NoUninit` bound would enforce this statically
+    /// but is not done here to avoid a new dependency.
     pub fn read_as_slice<T: Copy + 'static>(&self) -> Result<Option<&'f [T]>, Error> {
         let raw = match self.read_raw_ref()? {
             Some(s) => s,
@@ -522,7 +517,7 @@ impl<'f> Dataset<'f> {
         }
         let t_align = core::mem::align_of::<T>();
         let ptr = raw.as_ptr();
-        if (ptr as usize) % t_align != 0 {
+        if !(ptr as usize).is_multiple_of(t_align) {
             return Err(Error::AlignmentError(format!(
                 "data pointer {:p} is not aligned to {} bytes",
                 ptr, t_align,
@@ -565,7 +560,14 @@ impl<'f> Dataset<'f> {
     /// Returns a direct `&[i32]` slice — no allocation, no copy.
     pub fn read_i32_zerocopy(&self) -> Result<&'f [i32], Error> {
         let raw = self.zerocopy_raw_validated("i32", 4, |dt| {
-            matches!(dt, Datatype::FixedPoint { size: 4, signed: true, .. })
+            matches!(
+                dt,
+                Datatype::FixedPoint {
+                    size: 4,
+                    signed: true,
+                    ..
+                }
+            )
         })?;
         check_alignment::<i32>(raw.as_ptr())?;
         let count = raw.len() / 4;
@@ -577,7 +579,14 @@ impl<'f> Dataset<'f> {
     /// Returns a direct `&[i64]` slice — no allocation, no copy.
     pub fn read_i64_zerocopy(&self) -> Result<&'f [i64], Error> {
         let raw = self.zerocopy_raw_validated("i64", 8, |dt| {
-            matches!(dt, Datatype::FixedPoint { size: 8, signed: true, .. })
+            matches!(
+                dt,
+                Datatype::FixedPoint {
+                    size: 8,
+                    signed: true,
+                    ..
+                }
+            )
         })?;
         check_alignment::<i64>(raw.as_ptr())?;
         let count = raw.len() / 8;
@@ -590,14 +599,20 @@ impl<'f> Dataset<'f> {
     /// for any contiguous byte dataset.
     pub fn read_u8_zerocopy(&self) -> Result<&'f [u8], Error> {
         let dt = self.datatype()?;
-        if !matches!(dt, Datatype::FixedPoint { size: 1, signed: false, .. }) {
+        if !matches!(
+            dt,
+            Datatype::FixedPoint {
+                size: 1,
+                signed: false,
+                ..
+            }
+        ) {
             return Err(Error::ZeroCopyTypeMismatch {
                 expected: "u8",
                 actual: format!("{dt:?}"),
             });
         }
-        self.read_raw_ref()?
-            .ok_or(Error::ZeroCopyNotContiguous)
+        self.read_raw_ref()?.ok_or(Error::ZeroCopyNotContiguous)
     }
 
     /// Zero-copy raw byte read for any contiguous dataset.
@@ -606,8 +621,7 @@ impl<'f> Dataset<'f> {
     /// endianness checks.  Equivalent to `read_raw_ref()` but returns an
     /// error instead of `None` for non-contiguous layouts.
     pub fn read_raw_zerocopy(&self) -> Result<&'f [u8], Error> {
-        self.read_raw_ref()?
-            .ok_or(Error::ZeroCopyNotContiguous)
+        self.read_raw_ref()?.ok_or(Error::ZeroCopyNotContiguous)
     }
 
     /// Internal helper: get raw contiguous bytes after validating type and endianness.
@@ -628,8 +642,7 @@ impl<'f> Dataset<'f> {
         if !is_native_endian(byte_order) {
             return Err(Error::ZeroCopyNonNativeEndian);
         }
-        let raw = self.read_raw_ref()?
-            .ok_or(Error::ZeroCopyNotContiguous)?;
+        let raw = self.read_raw_ref()?.ok_or(Error::ZeroCopyNotContiguous)?;
         debug_assert_eq!(raw.len() % elem_size, 0);
         Ok(raw)
     }
@@ -750,12 +763,11 @@ fn has_message(header: &ObjectHeader, msg_type: MessageType) -> bool {
 }
 
 fn is_group(header: &ObjectHeader) -> bool {
-    header
-        .messages
-        .iter()
-        .any(|m| m.msg_type == MessageType::LinkInfo
+    header.messages.iter().any(|m| {
+        m.msg_type == MessageType::LinkInfo
             || m.msg_type == MessageType::Link
-            || m.msg_type == MessageType::SymbolTable)
+            || m.msg_type == MessageType::SymbolTable
+    })
 }
 
 fn resolve_group_entries(

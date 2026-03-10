@@ -6,17 +6,17 @@
 //! Run:
 //!   cargo bench -p rustyhdf5-filters -- deflate
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 fn generate_sine_data(size: usize) -> Vec<u8> {
-    (0..size).map(|i| ((i as f64 * 0.01).sin() * 127.0 + 128.0) as u8).collect()
+    (0..size)
+        .map(|i| ((i as f64 * 0.01).sin() * 127.0 + 128.0) as u8)
+        .collect()
 }
 
 /// Generate 1M f64 values as raw bytes — matches the purehdf5-format bench pattern.
 fn generate_f64_data(n: usize) -> Vec<u8> {
-    (0..n)
-        .flat_map(|i| (i as f64).to_le_bytes())
-        .collect()
+    (0..n).flat_map(|i| (i as f64).to_le_bytes()).collect()
 }
 
 fn bench_compress_1mb(c: &mut Criterion) {

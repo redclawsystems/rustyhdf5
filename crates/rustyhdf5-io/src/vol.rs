@@ -146,7 +146,7 @@ pub trait VirtualObjectLayer: Send + Sync {
     }
 
     /// Read raw bytes for a dataset at the given path.
-    fn read_dataset(&self, path: &str) -> Result<Vec<u8>, VolError> {
+    fn read_dataset(&self, _path: &str) -> Result<Vec<u8>, VolError> {
         Err(VolError::Unsupported(format!(
             "{}: read_dataset not supported",
             self.name()
@@ -154,7 +154,7 @@ pub trait VirtualObjectLayer: Send + Sync {
     }
 
     /// Get information about a dataset.
-    fn dataset_info(&self, path: &str) -> Result<VolDatasetInfo, VolError> {
+    fn dataset_info(&self, _path: &str) -> Result<VolDatasetInfo, VolError> {
         Err(VolError::Unsupported(format!(
             "{}: dataset_info not supported",
             self.name()
@@ -162,7 +162,7 @@ pub trait VirtualObjectLayer: Send + Sync {
     }
 
     /// List datasets in a group.
-    fn list_datasets(&self, group_path: &str) -> Result<Vec<String>, VolError> {
+    fn list_datasets(&self, _group_path: &str) -> Result<Vec<String>, VolError> {
         Err(VolError::Unsupported(format!(
             "{}: list_datasets not supported",
             self.name()
@@ -170,7 +170,7 @@ pub trait VirtualObjectLayer: Send + Sync {
     }
 
     /// List subgroups in a group.
-    fn list_groups(&self, group_path: &str) -> Result<Vec<String>, VolError> {
+    fn list_groups(&self, _group_path: &str) -> Result<Vec<String>, VolError> {
         Err(VolError::Unsupported(format!(
             "{}: list_groups not supported",
             self.name()
@@ -178,7 +178,7 @@ pub trait VirtualObjectLayer: Send + Sync {
     }
 
     /// Read attributes for an object (dataset or group).
-    fn read_attributes(&self, path: &str) -> Result<HashMap<String, Vec<u8>>, VolError> {
+    fn read_attributes(&self, _path: &str) -> Result<HashMap<String, Vec<u8>>, VolError> {
         Err(VolError::Unsupported(format!(
             "{}: read_attributes not supported",
             self.name()
@@ -188,10 +188,10 @@ pub trait VirtualObjectLayer: Send + Sync {
     /// Write a dataset at the given path.
     fn write_dataset(
         &mut self,
-        path: &str,
-        data: &[u8],
-        shape: &[u64],
-        dtype: &str,
+        _path: &str,
+        _data: &[u8],
+        _shape: &[u64],
+        _dtype: &str,
     ) -> Result<(), VolError> {
         Err(VolError::Unsupported(format!(
             "{}: write_dataset not supported",

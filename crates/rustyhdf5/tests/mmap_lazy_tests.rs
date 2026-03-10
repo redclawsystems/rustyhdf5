@@ -12,7 +12,7 @@
 
 use rustyhdf5::{AttrValue, FileBuilder, LazyFile};
 use rustyhdf5_io::prefetch::PrefetchReader;
-use rustyhdf5_io::{MemoryReader, MmapReader, MmapReadWrite};
+use rustyhdf5_io::{MemoryReader, MmapReadWrite, MmapReader};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -93,9 +93,7 @@ fn mmap_reader_read_attrs() {
     let file = LazyFile::open(reader).unwrap();
     let attrs = file.root().attrs().unwrap();
     assert!(matches!(attrs.get("version"), Some(AttrValue::I64(2))));
-    assert!(
-        matches!(attrs.get("description"), Some(AttrValue::String(s)) if s == "test file")
-    );
+    assert!(matches!(attrs.get("description"), Some(AttrValue::String(s)) if s == "test file"));
     std::fs::remove_file(&path).ok();
 }
 
@@ -263,9 +261,7 @@ fn lazy_file_group_attrs() {
 
     let sensors = file.group("sensors").unwrap();
     let attrs = sensors.attrs().unwrap();
-    assert!(
-        matches!(attrs.get("location"), Some(AttrValue::String(s)) if s == "lab")
-    );
+    assert!(matches!(attrs.get("location"), Some(AttrValue::String(s)) if s == "lab"));
 }
 
 /// Test 14: LazyFile dataset shape and dtype

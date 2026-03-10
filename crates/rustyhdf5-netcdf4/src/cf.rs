@@ -80,10 +80,7 @@ pub fn extract_cf_attributes(attrs: &HashMap<String, AttrValue>) -> CfAttributes
 ///
 /// If neither scale_factor nor add_offset are present, returns the data unchanged.
 /// Missing values (matching fill_value or missing_value) are preserved as NaN.
-pub fn apply_scale_offset(
-    data: &[f64],
-    cf: &CfAttributes,
-) -> Vec<f64> {
+pub fn apply_scale_offset(data: &[f64], cf: &CfAttributes) -> Vec<f64> {
     let scale = cf.scale_factor.unwrap_or(1.0);
     let offset = cf.add_offset.unwrap_or(0.0);
     let has_transform = cf.scale_factor.is_some() || cf.add_offset.is_some();
@@ -108,15 +105,15 @@ pub fn apply_scale_offset(
 
 /// Check if a value matches the fill value or missing value.
 fn is_missing(value: f64, fill: Option<f64>, missing: Option<f64>) -> bool {
-    if let Some(fv) = fill {
-        if (value - fv).abs() < f64::EPSILON || (value.is_nan() && fv.is_nan()) {
-            return true;
-        }
+    if let Some(fv) = fill
+        && ((value - fv).abs() < f64::EPSILON || (value.is_nan() && fv.is_nan()))
+    {
+        return true;
     }
-    if let Some(mv) = missing {
-        if (value - mv).abs() < f64::EPSILON || (value.is_nan() && mv.is_nan()) {
-            return true;
-        }
+    if let Some(mv) = missing
+        && ((value - mv).abs() < f64::EPSILON || (value.is_nan() && mv.is_nan()))
+    {
+        return true;
     }
     false
 }
@@ -249,10 +246,7 @@ mod tests {
     #[test]
     fn test_valid_range_array() {
         let mut attrs = HashMap::new();
-        attrs.insert(
-            "valid_range".into(),
-            AttrValue::F64Array(vec![0.0, 100.0]),
-        );
+        attrs.insert("valid_range".into(), AttrValue::F64Array(vec![0.0, 100.0]));
         let cf = extract_cf_attributes(&attrs);
         assert_eq!(cf.valid_range, Some((0.0, 100.0)));
     }

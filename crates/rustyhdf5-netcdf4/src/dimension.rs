@@ -68,7 +68,10 @@ pub(crate) fn extract_dimensions(
         let mut unordered = Vec::new();
 
         for (i, dim) in dims.into_iter().enumerate() {
-            let id = seen_dimids.iter().find(|(_, idx)| **idx == i).map(|(k, _)| *k);
+            let id = seen_dimids
+                .iter()
+                .find(|(_, idx)| **idx == i)
+                .map(|(k, _)| *k);
             if let Some(id) = id {
                 pairs.push((id, dim));
             } else {
@@ -104,11 +107,15 @@ fn get_dimid(attrs: &HashMap<String, AttrValue>) -> Option<i64> {
 ///
 /// We use the low-level format API to access the dataspace's max_dimensions field,
 /// which is not exposed by the high-level rustyhdf5 Dataset API.
-fn check_unlimited(
-    file: &rustyhdf5::File,
-    group: &rustyhdf5::Group<'_>,
-    ds_name: &str,
-) -> bool {
+///
+/// # Known limitation
+///
+/// TODO: This function currently always returns `false` because the high-level
+/// `Dataset` API does not expose `max_dimensions` from the dataspace, and the
+/// low-level fallback in `check_unlimited_low_level` is not yet implemented.
+/// Unlimited dimension detection requires parsing the object header directly
+/// to read the dataspace message's max_dimensions field.
+fn check_unlimited(file: &rustyhdf5::File, group: &rustyhdf5::Group<'_>, ds_name: &str) -> bool {
     // We need to go through the low-level API to check max_dimensions.
     // Build the path and resolve it.
     let sb = file.superblock();
@@ -134,26 +141,18 @@ fn check_unlimited(
     check_unlimited_low_level(file, ds_name, &ds)
 }
 
+// TODO: Implement unlimited dimension detection by resolving the dataset path
+// at the format level, parsing the object header, and checking whether
+// dataspace.max_dimensions[0] == u64::MAX. This requires either exposing
+// max_dimensions through the high-level Dataset API or re-resolving the
+// dataset address from the format layer. See check_unlimited() doc comment.
 fn check_unlimited_low_level(
     file: &rustyhdf5::File,
     _ds_name: &str,
     _ds: &rustyhdf5::Dataset<'_>,
 ) -> bool {
-    // Access the low-level format data to check the dataspace max_dimensions.
-    // We need to find the dataset's object header address and parse the dataspace.
     let data = file.as_bytes();
     let sb = file.superblock();
-
-    // We'll iterate through group entries to find the dataset address.
-    // Since we already have the Dataset, we need to get the raw object header.
-    // The rustyhdf5 Dataset stores the ObjectHeader but doesn't expose the address.
-    // We'll need to look at the dataspace via the format-level API.
-
-    // For a simpler approach: the Dataset exposes shape() but not max_dimensions.
-    // Let's parse from the raw bytes using the object header stored in Dataset.
-    // Unfortunately Dataset.header is private. We need another approach.
-
-    // Alternative: resolve the path again at the format level.
     let _ = (data, sb);
     false
 }

@@ -10,7 +10,7 @@
 //! - All existing operations (datasets, attrs, groups) work through mmap
 //! - LazyFile::open_mmap convenience
 
-use rustyhdf5::{AttrValue, DType, FileBuilder, File, LazyFile};
+use rustyhdf5::{AttrValue, DType, File, FileBuilder, LazyFile};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,9 +90,7 @@ fn file_open_mmap_reads_attrs() {
     let file = File::open(&path).unwrap();
     let attrs = file.root().attrs().unwrap();
     assert!(matches!(attrs.get("version"), Some(AttrValue::I64(2))));
-    assert!(
-        matches!(attrs.get("description"), Some(AttrValue::String(s)) if s == "test file")
-    );
+    assert!(matches!(attrs.get("description"), Some(AttrValue::String(s)) if s == "test file"));
     std::fs::remove_file(&path).ok();
 }
 
@@ -218,9 +216,7 @@ fn roundtrip_write_mmap_read() {
     assert_eq!(values, original);
 
     let attrs = file.root().attrs().unwrap();
-    assert!(
-        matches!(attrs.get("info"), Some(AttrValue::String(s)) if s == "roundtrip")
-    );
+    assert!(matches!(attrs.get("info"), Some(AttrValue::String(s)) if s == "roundtrip"));
     std::fs::remove_file(&path).ok();
 }
 
@@ -442,9 +438,7 @@ fn mmap_group_attrs() {
     let file = File::open(&path).unwrap();
     let sensors = file.group("sensors").unwrap();
     let attrs = sensors.attrs().unwrap();
-    assert!(
-        matches!(attrs.get("location"), Some(AttrValue::String(s)) if s == "lab")
-    );
+    assert!(matches!(attrs.get("location"), Some(AttrValue::String(s)) if s == "lab"));
     std::fs::remove_file(&path).ok();
 }
 
@@ -483,7 +477,10 @@ fn zero_copy_read_as_slice_f64() {
         Ok(None) => panic!("contiguous dataset should return Some"),
         Err(e) => {
             // Alignment error is acceptable if mmap offset isn't 8-byte aligned
-            assert!(format!("{e}").contains("alignment"), "unexpected error: {e}");
+            assert!(
+                format!("{e}").contains("alignment"),
+                "unexpected error: {e}"
+            );
         }
     }
     std::fs::remove_file(&path).ok();
@@ -508,20 +505,33 @@ fn zero_copy_read_as_slice_pointer_identity() {
     let ds = file.dataset("data").unwrap();
     // Get the raw slice
     let raw = ds.read_raw_ref().unwrap().unwrap();
-    assert!(file_range.contains(&raw.as_ptr()), "raw slice must point into mmap");
+    assert!(
+        file_range.contains(&raw.as_ptr()),
+        "raw slice must point into mmap"
+    );
 
     // Get the typed slice — must also point into the same region (if aligned)
     match ds.read_as_slice::<f64>() {
         Ok(Some(typed)) => {
             let typed_ptr = typed.as_ptr() as *const u8;
-            assert!(file_range.contains(&typed_ptr), "typed slice must point into mmap");
-            assert_eq!(typed_ptr, raw.as_ptr(), "typed and raw should share the same pointer");
+            assert!(
+                file_range.contains(&typed_ptr),
+                "typed slice must point into mmap"
+            );
+            assert_eq!(
+                typed_ptr,
+                raw.as_ptr(),
+                "typed and raw should share the same pointer"
+            );
             assert_eq!(typed, &[42.0, 43.0]);
         }
         Ok(None) => panic!("contiguous dataset should return Some"),
         Err(e) => {
             // Alignment error is acceptable if mmap offset isn't 8-byte aligned
-            assert!(format!("{e}").contains("alignment"), "unexpected error: {e}");
+            assert!(
+                format!("{e}").contains("alignment"),
+                "unexpected error: {e}"
+            );
         }
     }
     std::fs::remove_file(&path).ok();
@@ -569,7 +579,10 @@ fn zero_copy_read_as_slice_i32() {
         Ok(None) => panic!("contiguous dataset should return Some"),
         Err(e) => {
             // Alignment error is acceptable if mmap offset isn't aligned
-            assert!(format!("{e}").contains("alignment"), "unexpected error: {e}");
+            assert!(
+                format!("{e}").contains("alignment"),
+                "unexpected error: {e}"
+            );
         }
     }
     std::fs::remove_file(&path).ok();

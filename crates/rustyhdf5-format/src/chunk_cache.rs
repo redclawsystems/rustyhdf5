@@ -5,20 +5,17 @@
 //! `HashMap<ChunkCoord, ChunkInfo>` (the *chunk index*).  Decompressed chunk
 //! data is cached with LRU eviction controlled by a byte-budget.
 
-#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
 
-use std::alloc;
-use std::sync::Mutex;
 use core::ops::{Deref, DerefMut};
 
-#[cfg(feature = "std")]
-use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 use crate::chunk_index::{ChunkIndex, ChunkLayout};
 use crate::chunked_read::ChunkInfo;
@@ -55,8 +52,10 @@ pub fn align_to_cache_line(size: usize) -> usize {
 /// This enables SIMD operations to use aligned loads/stores when processing
 /// chunk data, avoiding the penalty of misaligned memory accesses.
 ///
-/// The buffer is backed by `std::alloc::Layout`-controlled allocation. It
-/// dereferences to `&[u8]` / `&mut [u8]` for seamless use.
+/// The buffer is backed by `core::alloc::Layout`-controlled allocation and
+/// uses `alloc::alloc` for the actual allocation, making it compatible with
+/// `no_std` (requires the `alloc` crate). It dereferences to `&[u8]` /
+/// `&mut [u8]` for seamless use.
 pub struct CacheAlignedBuffer {
     ptr: *mut u8,
     len: usize,
@@ -65,7 +64,6 @@ pub struct CacheAlignedBuffer {
 
 // SAFETY: The raw pointer is exclusively owned — no aliasing.
 unsafe impl Send for CacheAlignedBuffer {}
-unsafe impl Sync for CacheAlignedBuffer {}
 
 impl CacheAlignedBuffer {
     /// Allocate a new cache-line-aligned buffer of exactly `len` bytes,
@@ -82,9 +80,9 @@ impl CacheAlignedBuffer {
         let layout = core::alloc::Layout::from_size_align(capacity, CACHE_LINE_SIZE)
             .expect("invalid layout");
         // SAFETY: layout has non-zero size.
-        let ptr = unsafe { alloc::alloc_zeroed(layout) };
+        let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
         if ptr.is_null() {
-            alloc::handle_alloc_error(layout);
+            alloc::alloc::handle_alloc_error(layout);
         }
         Self { ptr, len, capacity }
     }
@@ -153,7 +151,7 @@ impl CacheAlignedBuffer {
     /// Returns `true` if the data pointer is aligned to `CACHE_LINE_SIZE`.
     #[inline]
     pub fn is_aligned(&self) -> bool {
-        self.len == 0 || (self.ptr as usize) % CACHE_LINE_SIZE == 0
+        self.len == 0 || (self.ptr as usize).is_multiple_of(CACHE_LINE_SIZE)
     }
 }
 
@@ -163,7 +161,7 @@ impl Drop for CacheAlignedBuffer {
             let layout = core::alloc::Layout::from_size_align(self.capacity, CACHE_LINE_SIZE)
                 .expect("invalid layout");
             // SAFETY: ptr was allocated with this layout.
-            unsafe { alloc::dealloc(self.ptr, layout) };
+            unsafe { alloc::alloc::dealloc(self.ptr, layout) };
         }
     }
 }
@@ -199,8 +197,12 @@ impl core::fmt::Debug for CacheAlignedBuffer {
     }
 }
 
-/// Coordinate key for a chunk — the N-dimensional offset vector.
+/// Coordinate key for a chunk -- the N-dimensional offset vector.
 pub type ChunkCoord = Vec<u64>;
+
+// ---------------------------------------------------------------------------
+// ChunkCache and supporting types require std::sync::Mutex.
+// ---------------------------------------------------------------------------
 
 /// Default maximum bytes of decompressed chunk data to cache (16 MiB).
 ///
@@ -218,6 +220,7 @@ pub const DEFAULT_MAX_SLOTS: usize = 521;
 // LRU entry
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "std")]
 struct CachedChunk {
     coord: ChunkCoord,
     data: CacheAlignedBuffer,
@@ -240,17 +243,18 @@ struct CachedChunk {
 ///
 /// The cache is wrapped in `Mutex` internally so it can be mutated through
 /// shared references (thread-safe).
+///
+/// Only available with the `std` feature because it requires `std::sync::Mutex`.
+#[cfg(feature = "std")]
 pub struct ChunkCache {
-    inner: Mutex<CacheInner>,
+    inner: std::sync::Mutex<CacheInner>,
 }
 
+#[cfg(feature = "std")]
 struct CacheInner {
-    /// Hash index: chunk coordinate → ChunkInfo (offset + size in file).
+    /// Hash index: chunk coordinate -> ChunkInfo (offset + size in file).
     /// Populated once per dataset on first access.
-    #[cfg(feature = "std")]
     index: Option<HashMap<ChunkCoord, ChunkInfo>>,
-    #[cfg(not(feature = "std"))]
-    index: Option<BTreeMap<ChunkCoord, ChunkInfo>>,
 
     /// LRU cache of decompressed chunk data.
     slots: Vec<CachedChunk>,
@@ -284,6 +288,7 @@ struct CacheInner {
 ///
 /// Updated on each `get_decompressed` / `put_decompressed` call to help
 /// the sweep detector understand the workload.
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Default)]
 pub struct AccessStats {
     /// Number of accesses that followed a sequential pattern.
@@ -302,6 +307,7 @@ pub struct AccessStats {
     pub bytes_read: u64,
 }
 
+#[cfg(feature = "std")]
 impl AccessStats {
     /// Cache hit rate as a fraction in [0.0, 1.0].
     ///
@@ -316,6 +322,7 @@ impl AccessStats {
     }
 }
 
+#[cfg(feature = "std")]
 impl ChunkCache {
     /// Create a new chunk cache with default limits (16 MiB, 521 slots).
     pub fn new() -> Self {
@@ -325,7 +332,7 @@ impl ChunkCache {
     /// Create a new chunk cache with custom byte budget and slot count.
     pub fn with_capacity(max_bytes: usize, max_slots: usize) -> Self {
         Self {
-            inner: Mutex::new(CacheInner {
+            inner: std::sync::Mutex::new(CacheInner {
                 index: None,
                 slots: Vec::with_capacity(max_slots.min(64)),
                 current_bytes: 0,
@@ -344,7 +351,11 @@ impl ChunkCache {
 
     /// Returns `true` if the chunk index has been built.
     pub fn has_index(&self) -> bool {
-        self.inner.lock().unwrap().index.is_some()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .index
+            .is_some()
     }
 
     /// Build the chunk index from a pre-collected list of `ChunkInfo`.
@@ -352,14 +363,11 @@ impl ChunkCache {
     /// The `rank` parameter is used to truncate offsets to spatial dims only
     /// (B-tree v1 stores rank+1 offsets).
     pub fn populate_index(&self, chunks: &[ChunkInfo], rank: usize) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.index.is_some() {
             return; // already populated
         }
-        #[cfg(feature = "std")]
         let mut map = HashMap::with_capacity(chunks.len());
-        #[cfg(not(feature = "std"))]
-        let mut map = BTreeMap::new();
 
         for ci in chunks {
             let coord: ChunkCoord = ci.offsets.iter().take(rank).copied().collect();
@@ -370,13 +378,13 @@ impl ChunkCache {
 
     /// Look up a chunk by its spatial coordinate in the index.
     pub fn lookup_index(&self, coord: &[u64]) -> Option<ChunkInfo> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.index.as_ref()?.get(coord).cloned()
     }
 
     /// Return all indexed chunks as a `Vec<ChunkInfo>` (order unspecified).
     pub fn all_indexed_chunks(&self) -> Option<Vec<ChunkInfo>> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.index.as_ref().map(|m| m.values().cloned().collect())
     }
 
@@ -384,12 +392,16 @@ impl ChunkCache {
 
     /// Returns `true` if the chunk B-tree index has been built.
     pub fn has_chunk_index(&self) -> bool {
-        self.inner.lock().unwrap().chunk_index.is_some()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .chunk_index
+            .is_some()
     }
 
     /// Build and store the chunk B-tree index from a pre-collected list of `ChunkInfo`.
     pub fn populate_chunk_index(&self, chunks: &[ChunkInfo], rank: usize) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.chunk_index.is_some() {
             return;
         }
@@ -400,17 +412,16 @@ impl ChunkCache {
 
     /// Returns `true` if the chunk layout has been computed.
     pub fn has_chunk_layout(&self) -> bool {
-        self.inner.lock().unwrap().chunk_layout.is_some()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .chunk_layout
+            .is_some()
     }
 
     /// Build and store the pre-computed chunk layout for fast assembly.
-    pub fn populate_chunk_layout(
-        &self,
-        ds_dims: &[usize],
-        chunk_dims: &[usize],
-        elem_size: usize,
-    ) {
-        let mut inner = self.inner.lock().unwrap();
+    pub fn populate_chunk_layout(&self, ds_dims: &[usize], chunk_dims: &[usize], elem_size: usize) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.chunk_layout.is_some() {
             return;
         }
@@ -426,7 +437,7 @@ impl ChunkCache {
     where
         F: FnOnce(&ChunkLayout) -> R,
     {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.chunk_layout.as_ref().map(f)
     }
 
@@ -436,14 +447,16 @@ impl ChunkCache {
     ///
     /// Returns a clone of the cache-line-aligned buffer.
     pub fn get_decompressed(&self, coord: &[u64]) -> Option<Vec<u8>> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.tick += 1;
         let tick = inner.tick;
 
         // Track sequential vs random access
-        let is_sequential = inner.last_coord.as_ref().map_or(false, |prev| {
+        let is_sequential = inner.last_coord.as_ref().is_some_and(|prev| {
             // Sequential if exactly one dimension changed
-            let changes: usize = prev.iter().zip(coord.iter())
+            let changes: usize = prev
+                .iter()
+                .zip(coord.iter())
                 .filter(|(a, b)| a != b)
                 .count();
             changes <= 1
@@ -474,7 +487,7 @@ impl ChunkCache {
 
     /// Try to get a reference-counted clone of the aligned buffer for a chunk.
     pub fn get_decompressed_aligned(&self, coord: &[u64]) -> Option<CacheAlignedBuffer> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.tick += 1;
         let tick = inner.tick;
         let mut found = None;
@@ -505,7 +518,7 @@ impl ChunkCache {
 
     /// Insert an already-aligned buffer into the LRU cache.
     pub fn put_decompressed_aligned(&self, coord: ChunkCoord, data: CacheAlignedBuffer) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let data_len = data.len();
 
         // Don't cache if single chunk exceeds budget
@@ -550,7 +563,7 @@ impl ChunkCache {
 
     /// Clear the entire cache (index + decompressed data).
     pub fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.index = None;
         inner.slots.clear();
         inner.current_bytes = 0;
@@ -567,7 +580,7 @@ impl ChunkCache {
     /// subsequent lookups are O(1). This does NOT pre-decompress the
     /// chunks — it only ensures the index entries exist.
     pub fn prefetch_hint(&self, next_coords: &[ChunkCoord]) {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.index.is_none() {
             return;
         }
@@ -576,9 +589,11 @@ impl ChunkCache {
         // The index is already populated, so this is a no-op for known chunks.
         // The purpose is to signal intent — callers can pre-decompress if needed.
         // We touch the stats to record that prefetch hints were issued.
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         for coord in next_coords {
-            let exists = inner.index.as_ref()
+            let exists = inner
+                .index
+                .as_ref()
                 .map(|idx| idx.contains_key(coord))
                 .unwrap_or(false);
             if exists {
@@ -589,25 +604,41 @@ impl ChunkCache {
 
     /// Return the current access pattern statistics.
     pub fn access_stats(&self) -> AccessStats {
-        self.inner.lock().unwrap().stats.clone()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .stats
+            .clone()
     }
 
     /// Update the sweep direction label in the access stats.
     pub fn set_sweep_direction(&self, direction: &'static str) {
-        self.inner.lock().unwrap().stats.sweep_direction = Some(direction);
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .stats
+            .sweep_direction = Some(direction);
     }
 
     /// Number of decompressed chunks currently cached.
     pub fn cached_chunk_count(&self) -> usize {
-        self.inner.lock().unwrap().slots.len()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .slots
+            .len()
     }
 
     /// Total bytes of decompressed data currently cached.
     pub fn cached_bytes(&self) -> usize {
-        self.inner.lock().unwrap().current_bytes
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .current_bytes
     }
 }
 
+#[cfg(feature = "std")]
 impl Default for ChunkCache {
     fn default() -> Self {
         Self::new()
@@ -796,6 +827,9 @@ mod tests {
         assert_eq!(align_to_cache_line(0), 0);
         assert_eq!(align_to_cache_line(1), CACHE_LINE_SIZE);
         assert_eq!(align_to_cache_line(CACHE_LINE_SIZE), CACHE_LINE_SIZE);
-        assert_eq!(align_to_cache_line(CACHE_LINE_SIZE + 1), CACHE_LINE_SIZE * 2);
+        assert_eq!(
+            align_to_cache_line(CACHE_LINE_SIZE + 1),
+            CACHE_LINE_SIZE * 2
+        );
     }
 }

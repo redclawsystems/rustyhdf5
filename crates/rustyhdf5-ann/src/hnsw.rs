@@ -2,19 +2,19 @@
 
 use std::collections::{BinaryHeap, HashSet};
 
-use rustyhdf5_format::error::FormatError;
-use rustyhdf5_format::file_writer::{AttrValue, FileWriter as FmtWriter};
-use rustyhdf5_format::signature::find_signature;
-use rustyhdf5_format::superblock::Superblock;
-use rustyhdf5_format::group_v2::resolve_path_any;
-use rustyhdf5_format::object_header::ObjectHeader;
-use rustyhdf5_format::message_type::MessageType;
+use rustyhdf5_format::attribute::extract_attributes_full;
 use rustyhdf5_format::data_layout::DataLayout;
+use rustyhdf5_format::data_read::{read_as_f32, read_as_i32, read_raw_data_full};
 use rustyhdf5_format::dataspace::Dataspace;
 use rustyhdf5_format::datatype::Datatype;
-use rustyhdf5_format::data_read::{read_as_f32, read_as_i32, read_raw_data_full};
+use rustyhdf5_format::error::FormatError;
+use rustyhdf5_format::file_writer::{AttrValue, FileWriter as FmtWriter};
 use rustyhdf5_format::filter_pipeline::FilterPipeline;
-use rustyhdf5_format::attribute::extract_attributes_full;
+use rustyhdf5_format::group_v2::resolve_path_any;
+use rustyhdf5_format::message_type::MessageType;
+use rustyhdf5_format::object_header::ObjectHeader;
+use rustyhdf5_format::signature::find_signature;
+use rustyhdf5_format::superblock::Superblock;
 use rustyhdf5_io::FileWriter as IoFileWriter;
 use rustyhdf5_io::HDF5ReadWrite;
 
@@ -258,11 +258,7 @@ impl HnswIndex {
                 );
 
                 // Select up to m closest neighbors
-                let selected: Vec<usize> = neighbors
-                    .iter()
-                    .take(max_conn)
-                    .map(|c| c.id)
-                    .collect();
+                let selected: Vec<usize> = neighbors.iter().take(max_conn).map(|c| c.id).collect();
 
                 // Add bidirectional connections
                 graph[layer][i] = selected.clone();
@@ -333,14 +329,7 @@ impl HnswIndex {
         }
 
         // Search layer 0 with ef candidates
-        let candidates = search_layer(
-            &self.vectors,
-            &self.graph[0],
-            query,
-            ep,
-            ef,
-            self.metric,
-        );
+        let candidates = search_layer(&self.vectors, &self.graph[0], query, ep, ef, self.metric);
 
         candidates
             .into_iter()
@@ -365,7 +354,11 @@ impl HnswIndex {
         let dim = if n > 0 { self.vectors[0].len() } else { 0 };
 
         // Flatten vectors into a 1D array for storage
-        let flat_vectors: Vec<f32> = self.vectors.iter().flat_map(|v| v.iter().copied()).collect();
+        let flat_vectors: Vec<f32> = self
+            .vectors
+            .iter()
+            .flat_map(|v| v.iter().copied())
+            .collect();
 
         let mut group = fw.create_group("ann");
 
@@ -401,7 +394,10 @@ impl HnswIndex {
             .create_dataset("config")
             .with_i32_data(&node_levels_i32)
             .set_attr("m", AttrValue::I64(self.m as i64))
-            .set_attr("ef_construction", AttrValue::I64(self.ef_construction as i64))
+            .set_attr(
+                "ef_construction",
+                AttrValue::I64(self.ef_construction as i64),
+            )
             .set_attr("entry_point", AttrValue::I64(self.entry_point as i64))
             .set_attr("num_layers", AttrValue::I64(num_layers as i64))
             .set_attr(
@@ -420,7 +416,7 @@ impl HnswIndex {
     ///
     /// The HDF5 data must contain the `/ann/vectors`, `/ann/graph_layer_*`,
     /// and `/ann/config` datasets as produced by [`to_hdf5_bytes`].
-    pub fn load_from_hdf5(data: &[u8], _path: &str) -> Result<Self, FormatError> {
+    pub fn load_from_hdf5(data: &[u8]) -> Result<Self, FormatError> {
         let sig_offset = find_signature(data)?;
         let sb = Superblock::parse(data, sig_offset)?;
 
@@ -437,8 +433,9 @@ impl HnswIndex {
         let n = get_attr_i64(&config_attrs, "num_vectors")? as usize;
         let dim = get_attr_i64(&config_attrs, "dimension")? as usize;
         let metric_str = get_attr_string(&config_attrs, "metric")?;
-        let metric = DistanceMetric::from_str(&metric_str)
-            .ok_or_else(|| FormatError::SerializationError(format!("unknown metric: {metric_str}")))?;
+        let metric = DistanceMetric::from_str(&metric_str).ok_or_else(|| {
+            FormatError::SerializationError(format!("unknown metric: {metric_str}"))
+        })?;
 
         let node_levels: Vec<usize> = node_levels_i32.iter().map(|&l| l as usize).collect();
 
@@ -658,10 +655,7 @@ fn prune_connections(
         .iter()
         .map(|&n| (n, compute_distance(&vectors[node], &vectors[n], metric)))
         .collect();
-    scored.sort_by(|a, b| {
-        a.1.partial_cmp(&b.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(max_conn);
     *neighbors = scored.into_iter().map(|(id, _)| id).collect();
 }
@@ -674,29 +668,55 @@ fn read_dataset_raw(data: &[u8], sb: &Superblock, path: &str) -> Result<Vec<u8>,
     let addr = resolve_path_any(data, sb, path)?;
     let header = ObjectHeader::parse(data, addr as usize, sb.offset_size, sb.length_size)?;
 
-    let dt_msg = header.messages.iter().find(|m| m.msg_type == MessageType::Datatype)
+    let dt_msg = header
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
         .ok_or(FormatError::DatasetMissingData)?;
     let (datatype, _) = Datatype::parse(&dt_msg.data)?;
 
-    let ds_msg = header.messages.iter().find(|m| m.msg_type == MessageType::Dataspace)
+    let ds_msg = header
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
         .ok_or(FormatError::DatasetMissingShape)?;
     let dataspace = Dataspace::parse(&ds_msg.data, sb.length_size)?;
 
-    let dl_msg = header.messages.iter().find(|m| m.msg_type == MessageType::DataLayout)
+    let dl_msg = header
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
         .ok_or(FormatError::DatasetMissingData)?;
     let layout = DataLayout::parse(&dl_msg.data, sb.offset_size, sb.length_size)?;
 
-    let pipeline = header.messages.iter()
+    let pipeline = header
+        .messages
+        .iter()
         .find(|m| m.msg_type == MessageType::FilterPipeline)
         .and_then(|msg| FilterPipeline::parse(&msg.data).ok());
 
-    read_raw_data_full(data, &layout, &dataspace, &datatype, pipeline.as_ref(), sb.offset_size, sb.length_size)
+    read_raw_data_full(
+        data,
+        &layout,
+        &dataspace,
+        &datatype,
+        pipeline.as_ref(),
+        sb.offset_size,
+        sb.length_size,
+    )
 }
 
-fn read_dataset_datatype(data: &[u8], sb: &Superblock, path: &str) -> Result<Datatype, FormatError> {
+fn read_dataset_datatype(
+    data: &[u8],
+    sb: &Superblock,
+    path: &str,
+) -> Result<Datatype, FormatError> {
     let addr = resolve_path_any(data, sb, path)?;
     let header = ObjectHeader::parse(data, addr as usize, sb.offset_size, sb.length_size)?;
-    let dt_msg = header.messages.iter().find(|m| m.msg_type == MessageType::Datatype)
+    let dt_msg = header
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
         .ok_or(FormatError::DatasetMissingData)?;
     let (datatype, _) = Datatype::parse(&dt_msg.data)?;
     Ok(datatype)
@@ -924,7 +944,7 @@ mod tests {
         assert!(!bytes.is_empty());
         assert_eq!(&bytes[..8], b"\x89HDF\r\n\x1a\n");
 
-        let loaded = HnswIndex::load_from_hdf5(&bytes, "").unwrap();
+        let loaded = HnswIndex::load_from_hdf5(&bytes).unwrap();
         assert_eq!(loaded.len(), index.len());
         assert_eq!(loaded.dimension(), index.dimension());
         assert_eq!(loaded.metric(), DistanceMetric::L2);
@@ -947,7 +967,7 @@ mod tests {
         let original_results = index.search(query, 5, 24);
 
         let bytes = index.to_hdf5_bytes().unwrap();
-        let loaded = HnswIndex::load_from_hdf5(&bytes, "").unwrap();
+        let loaded = HnswIndex::load_from_hdf5(&bytes).unwrap();
         let loaded_results = loaded.search(query, 5, 24);
 
         assert_eq!(original_results.len(), loaded_results.len());
@@ -960,11 +980,10 @@ mod tests {
     #[test]
     fn cosine_roundtrip() {
         let vectors = make_random_vectors(20, 3, 555);
-        let index =
-            HnswIndex::build_with_metric(&vectors, 4, 16, DistanceMetric::Cosine);
+        let index = HnswIndex::build_with_metric(&vectors, 4, 16, DistanceMetric::Cosine);
 
         let bytes = index.to_hdf5_bytes().unwrap();
-        let loaded = HnswIndex::load_from_hdf5(&bytes, "").unwrap();
+        let loaded = HnswIndex::load_from_hdf5(&bytes).unwrap();
         assert_eq!(loaded.metric(), DistanceMetric::Cosine);
     }
 
@@ -993,7 +1012,7 @@ mod tests {
         assert_eq!(&data[..8], b"\x89HDF\r\n\x1a\n");
 
         // Load it back
-        let loaded = HnswIndex::load_from_hdf5(&data, "").unwrap();
+        let loaded = HnswIndex::load_from_hdf5(&data).unwrap();
         assert_eq!(loaded.len(), 15);
 
         std::fs::remove_file(&path).ok();
@@ -1022,17 +1041,13 @@ mod tests {
         let hnsw_ids: HashSet<usize> = results.iter().map(|r| r.0).collect();
         let brute_ids: HashSet<usize> = brute.iter().map(|r| r.0).collect();
         let overlap = hnsw_ids.intersection(&brute_ids).count();
-        assert!(
-            overlap >= k * 8 / 10,
-            "HNSW recall too low: {overlap}/{k}"
-        );
+        assert!(overlap >= k * 8 / 10, "HNSW recall too low: {overlap}/{k}");
     }
 
     #[test]
     fn search_accuracy_cosine() {
         let vectors = make_random_vectors(100, 8, 99);
-        let index =
-            HnswIndex::build_with_metric(&vectors, 16, 64, DistanceMetric::Cosine);
+        let index = HnswIndex::build_with_metric(&vectors, 16, 64, DistanceMetric::Cosine);
 
         let query = &vectors[25];
         let k = 10;

@@ -26,9 +26,9 @@ pub struct BTreeV1Node {
 
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -109,7 +109,7 @@ impl BTreeV1Node {
         let mut keys = Vec::with_capacity(eu + 1);
         let mut children = Vec::with_capacity(eu);
 
-        for i in 0..eu {
+        for _i in 0..eu {
             // key[i]
             let key = read_offset(file_data, pos, offset_size)?;
             keys.push(key);
@@ -118,7 +118,6 @@ impl BTreeV1Node {
             let child = read_offset(file_data, pos, offset_size)?;
             children.push(child);
             pos += os;
-            let _ = i;
         }
         // final key
         let key = read_offset(file_data, pos, offset_size)?;
@@ -136,6 +135,9 @@ impl BTreeV1Node {
     }
 }
 
+/// Maximum recursion depth for B-tree traversal (malformed data protection).
+const MAX_BTREE_DEPTH: usize = 64;
+
 /// Collect all leaf-level child addresses (SNOD addresses) by traversing the B-tree.
 pub fn collect_symbol_table_nodes(
     file_data: &[u8],
@@ -143,6 +145,20 @@ pub fn collect_symbol_table_nodes(
     offset_size: u8,
     length_size: u8,
 ) -> Result<Vec<u64>, FormatError> {
+    collect_symbol_table_nodes_inner(file_data, btree_address, offset_size, length_size, 0)
+}
+
+fn collect_symbol_table_nodes_inner(
+    file_data: &[u8],
+    btree_address: u64,
+    offset_size: u8,
+    length_size: u8,
+    depth: usize,
+) -> Result<Vec<u64>, FormatError> {
+    if depth > MAX_BTREE_DEPTH {
+        return Err(FormatError::NestingDepthExceeded);
+    }
+
     let node = BTreeV1Node::parse(file_data, btree_address as usize, offset_size, length_size)?;
 
     if node.node_type != 0 {
@@ -156,8 +172,13 @@ pub fn collect_symbol_table_nodes(
         // Internal: recurse into children
         let mut result = Vec::new();
         for &child_addr in &node.children {
-            let child_snods =
-                collect_symbol_table_nodes(file_data, child_addr, offset_size, length_size)?;
+            let child_snods = collect_symbol_table_nodes_inner(
+                file_data,
+                child_addr,
+                offset_size,
+                length_size,
+                depth + 1,
+            )?;
             result.extend(child_snods);
         }
         Ok(result)
@@ -192,7 +213,11 @@ mod tests {
         buf.push(node_type);
         buf.push(level);
         buf.extend_from_slice(&entries_used.to_le_bytes());
-        let undef: u64 = if offset_size == 4 { 0xFFFFFFFF } else { 0xFFFFFFFFFFFFFFFF };
+        let undef: u64 = if offset_size == 4 {
+            0xFFFFFFFF
+        } else {
+            0xFFFFFFFFFFFFFFFF
+        };
         write_offset(&mut buf, left.unwrap_or(undef), offset_size);
         write_offset(&mut buf, right.unwrap_or(undef), offset_size);
         for i in 0..children.len() {
@@ -235,10 +260,13 @@ mod tests {
         let leaf1 = build_btree_node(0, 0, &[0, 5], &[0xA00], None, None, os);
         let leaf2 = build_btree_node(0, 0, &[5, 10], &[0xB00], None, None, os);
         let internal = build_btree_node(
-            0, 1,
+            0,
+            1,
             &[0, 5, 10],
             &[leaf1_offset as u64, leaf2_offset as u64],
-            None, None, os,
+            None,
+            None,
+            os,
         );
 
         let mut file = vec![0u8; 1024];

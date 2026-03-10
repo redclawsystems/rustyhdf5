@@ -36,9 +36,9 @@ pub struct BTreeV2Record {
 
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -46,8 +46,14 @@ fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
         2 => u16::from_le_bytes([data[pos], data[pos + 1]]) as u64,
         4 => u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as u64,
         8 => u64::from_le_bytes([
-            data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-            data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
         ]),
         _ => return Err(FormatError::InvalidOffsetSize(size)),
     })
@@ -119,8 +125,7 @@ impl BTreeV2Header {
         pos += offset_size as usize;
 
         ensure_len(file_data, pos, 2)?;
-        let num_records_in_root =
-            u16::from_le_bytes([file_data[pos], file_data[pos + 1]]);
+        let num_records_in_root = u16::from_le_bytes([file_data[pos], file_data[pos + 1]]);
         pos += 2;
 
         let total_records = read_offset(file_data, pos, length_size)?;
@@ -222,7 +227,12 @@ fn parse_leaf_records(
 
     let pos = offset + 6;
     let rs = record_size as usize;
-    let total = num_records as usize * rs;
+    let total = (num_records as usize)
+        .checked_mul(rs)
+        .ok_or(FormatError::UnexpectedEof {
+            expected: usize::MAX,
+            available: file_data.len(),
+        })?;
     ensure_len(file_data, pos, total)?;
 
     // Validate checksum: 4 bytes after records + padding
@@ -276,9 +286,13 @@ fn collect_internal_records(
     let mut pos = offset + 6;
 
     // Read all records first
-    ensure_len(file_data, pos, nr * rs)?;
+    let records_total = nr.checked_mul(rs).ok_or(FormatError::UnexpectedEof {
+        expected: usize::MAX,
+        available: file_data.len(),
+    })?;
+    ensure_len(file_data, pos, records_total)?;
     let records_start = pos;
-    pos += nr * rs;
+    pos += records_total;
 
     // Compute sizes for child pointers
     // max_records at child depth - for variable-width nrec encoding
@@ -286,9 +300,24 @@ fn collect_internal_records(
     let max_nrec_child = if child_depth == 0 {
         max_leaf_nrec
     } else {
-        // For internal nodes at child_depth, computing max records is complex.
-        // Use a reasonable upper bound from node_size.
-        max_leaf_nrec * 2 // conservative estimate
+        // For internal nodes at child_depth, the true max_nrec depends on the
+        // node size, record size, and the recursive width of child pointer
+        // entries (which themselves depend on max_nrec at deeper levels).
+        // Computing the exact value requires iterating from the leaf level
+        // upward, as described in the HDF5 spec (III.A.2 "Computing the Size
+        // of B-tree Nodes").
+        //
+        // We use `max_leaf_nrec * 2` as a conservative upper bound. This
+        // over-estimates the nrec encoding width, which means we may read
+        // slightly more bytes per child pointer than strictly necessary, but
+        // never fewer. The over-read bytes are harmless because we only
+        // decode `num_records` entries (the actual count from the node header).
+        //
+        // Known limitation: for very deep trees (depth > 3) with small record
+        // sizes, the true max could exceed this estimate, causing us to
+        // under-allocate the nrec encoding width and misparse child pointers.
+        // In practice, HDF5 B-tree v2 depths rarely exceed 2-3.
+        max_leaf_nrec * 2
     };
     let nrec_width = bytes_for_max_records(max_nrec_child);
 
@@ -321,12 +350,8 @@ fn collect_internal_records(
     // We collect child[0] records, then record[0], then child[1], etc.
     for (i, &(child_addr, child_nrec)) in children.iter().enumerate() {
         if child_depth == 0 {
-            let leaf_recs = parse_leaf_records(
-                file_data,
-                child_addr as usize,
-                child_nrec,
-                record_size,
-            )?;
+            let leaf_recs =
+                parse_leaf_records(file_data, child_addr as usize, child_nrec, record_size)?;
             out.extend(leaf_recs);
         } else {
             collect_internal_records(
@@ -345,9 +370,31 @@ fn collect_internal_records(
 
         // Add record[i] (except after the last child)
         if i < nr {
-            let rec_start = records_start + i * rs;
+            let rec_offset = i.checked_mul(rs).ok_or(FormatError::UnexpectedEof {
+                expected: usize::MAX,
+                available: file_data.len(),
+            })?;
+            let rec_start =
+                records_start
+                    .checked_add(rec_offset)
+                    .ok_or(FormatError::UnexpectedEof {
+                        expected: usize::MAX,
+                        available: file_data.len(),
+                    })?;
+            let rec_end = rec_start
+                .checked_add(rs)
+                .ok_or(FormatError::UnexpectedEof {
+                    expected: usize::MAX,
+                    available: file_data.len(),
+                })?;
+            if rec_end > file_data.len() {
+                return Err(FormatError::UnexpectedEof {
+                    expected: rec_end,
+                    available: file_data.len(),
+                });
+            }
             out.push(BTreeV2Record {
-                data: file_data[rec_start..rec_start + rs].to_vec(),
+                data: file_data[rec_start..rec_end].to_vec(),
             });
         }
     }

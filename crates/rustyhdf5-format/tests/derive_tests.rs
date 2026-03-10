@@ -1,8 +1,8 @@
 //! Tests for the `#[derive(H5Type)]` proc macro.
 
 use rustyhdf5_derive::H5Type;
-use rustyhdf5_format::datatype::Datatype;
 use rustyhdf5_format::data_read::{read_as_f64, read_as_i32, read_compound_fields};
+use rustyhdf5_format::datatype::Datatype;
 
 // ---- Test structs ----
 
@@ -216,7 +216,10 @@ fn array_datatype_structure() {
                     dimensions,
                 } => {
                     assert_eq!(dimensions, &vec![3u32]);
-                    assert!(matches!(**base_type, Datatype::FloatingPoint { size: 8, .. }));
+                    assert!(matches!(
+                        **base_type,
+                        Datatype::FloatingPoint { size: 8, .. }
+                    ));
                 }
                 _ => panic!("expected Array datatype for coords"),
             }
@@ -265,15 +268,25 @@ fn compound_read_compatibility() {
 
 #[test]
 fn roundtrip_through_file_writer() {
+    use rustyhdf5_format::data_read::read_raw_data;
     use rustyhdf5_format::file_writer::FileWriter;
-    use rustyhdf5_format::superblock::Superblock;
     use rustyhdf5_format::object_header::ObjectHeader;
     use rustyhdf5_format::signature::find_signature;
-    use rustyhdf5_format::data_read::read_raw_data;
+    use rustyhdf5_format::superblock::Superblock;
 
     let items = vec![
-        MixedNumerics { a: 1.5, b: 2.5, c: -10, d: 100 },
-        MixedNumerics { a: 3.0, b: 4.0, c: 20, d: 200 },
+        MixedNumerics {
+            a: 1.5,
+            b: 2.5,
+            c: -10,
+            d: 100,
+        },
+        MixedNumerics {
+            a: 3.0,
+            b: 4.0,
+            c: 20,
+            d: 200,
+        },
     ];
 
     let dt = MixedNumerics::hdf5_datatype();
@@ -290,15 +303,26 @@ fn roundtrip_through_file_writer() {
     // Parse the file back
     let sig_offset = find_signature(&file_bytes).unwrap();
     let sb = Superblock::parse(&file_bytes, sig_offset).unwrap();
-    let oh = ObjectHeader::parse(&file_bytes, sb.root_group_address as usize, sb.offset_size, sb.length_size).unwrap();
+    let oh = ObjectHeader::parse(
+        &file_bytes,
+        sb.root_group_address as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
     // Find the compound dataset link
     let mut ds_addr = None;
     for msg in &oh.messages {
         if msg.msg_type == rustyhdf5_format::message_type::MessageType::Link {
-            let link = rustyhdf5_format::link_message::LinkMessage::parse(&msg.data, sb.offset_size).unwrap();
+            let link =
+                rustyhdf5_format::link_message::LinkMessage::parse(&msg.data, sb.offset_size)
+                    .unwrap();
             if link.name == "compound_ds" {
-                if let rustyhdf5_format::link_message::LinkTarget::Hard { object_header_address } = link.link_target {
+                if let rustyhdf5_format::link_message::LinkTarget::Hard {
+                    object_header_address,
+                } = link.link_target
+                {
                     ds_addr = Some(object_header_address);
                 }
             }
@@ -306,7 +330,13 @@ fn roundtrip_through_file_writer() {
     }
     let ds_addr = ds_addr.expect("compound_ds link not found");
 
-    let ds_oh = ObjectHeader::parse(&file_bytes, ds_addr as usize, sb.offset_size, sb.length_size).unwrap();
+    let ds_oh = ObjectHeader::parse(
+        &file_bytes,
+        ds_addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
     // Extract datatype, dataspace, and layout
     let mut found_dt = None;
@@ -315,14 +345,25 @@ fn roundtrip_through_file_writer() {
     for msg in &ds_oh.messages {
         match msg.msg_type {
             rustyhdf5_format::message_type::MessageType::Datatype => {
-                let (parsed_dt, _) = rustyhdf5_format::datatype::Datatype::parse(&msg.data).unwrap();
+                let (parsed_dt, _) =
+                    rustyhdf5_format::datatype::Datatype::parse(&msg.data).unwrap();
                 found_dt = Some(parsed_dt);
             }
             rustyhdf5_format::message_type::MessageType::Dataspace => {
-                found_ds = Some(rustyhdf5_format::dataspace::Dataspace::parse(&msg.data, sb.length_size).unwrap());
+                found_ds = Some(
+                    rustyhdf5_format::dataspace::Dataspace::parse(&msg.data, sb.length_size)
+                        .unwrap(),
+                );
             }
             rustyhdf5_format::message_type::MessageType::DataLayout => {
-                found_layout = Some(rustyhdf5_format::data_layout::DataLayout::parse(&msg.data, sb.offset_size, sb.length_size).unwrap());
+                found_layout = Some(
+                    rustyhdf5_format::data_layout::DataLayout::parse(
+                        &msg.data,
+                        sb.offset_size,
+                        sb.length_size,
+                    )
+                    .unwrap(),
+                );
             }
             _ => {}
         }

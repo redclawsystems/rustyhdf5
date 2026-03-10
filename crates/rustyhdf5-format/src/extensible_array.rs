@@ -37,9 +37,9 @@ pub struct ExtensibleArrayHeader {
 
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -96,8 +96,8 @@ impl ExtensibleArrayHeader {
         //   max_nelmts_bits(1) + idx_blk_elmts(1) + min_dblk_nelmts(1) +
         //   super_blk_min_nelmts(1) + max_dblk_nelmts_bits(1) +
         //   6 stats fields (each length_size) + index_block_address(offset_size) + checksum(4)
-        let min_size = 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
-            + 6 * length_size as usize + offset_size as usize + 4;
+        let min_size =
+            4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 6 * length_size as usize + offset_size as usize + 4;
         if offset + min_size > file_data.len() {
             return Err(FormatError::UnexpectedEof {
                 expected: offset + min_size,
@@ -114,9 +114,9 @@ impl ExtensibleArrayHeader {
 
         let version = d[4];
         if version != 0 {
-            return Err(FormatError::ChunkedReadError(
-                format!("unsupported Extensible Array header version: {version}"),
-            ));
+            return Err(FormatError::ChunkedReadError(format!(
+                "unsupported Extensible Array header version: {version}"
+            )));
         }
 
         let client_id = d[5];
@@ -153,8 +153,7 @@ impl ExtensibleArrayHeader {
 
     /// Compute the size of this header in bytes (for write support).
     pub fn serialized_size(offset_size: u8, length_size: u8) -> usize {
-        4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
-            + 6 * length_size as usize + offset_size as usize + 4
+        4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 6 * length_size as usize + offset_size as usize + 4
     }
 }
 
@@ -198,11 +197,20 @@ fn read_element(
         ))
     } else {
         // Filtered: address + compressed_size + filter_mask
-        let chunk_size_bytes = element_size as usize - os - 4;
+        let es = element_size as usize;
+        if es < os + 4 {
+            return Err(FormatError::ChunkedReadError(
+                "element_size too small for filtered element".into(),
+            ));
+        }
+        let chunk_size_bytes = es - os - 4;
         let elem_total = os + chunk_size_bytes + 4;
-        if pos + elem_total > data.len() {
+        if pos
+            .checked_add(elem_total)
+            .is_none_or(|end| end > data.len())
+        {
             return Err(FormatError::UnexpectedEof {
-                expected: pos + elem_total,
+                expected: pos.saturating_add(elem_total),
                 available: data.len(),
             });
         }
@@ -242,6 +250,9 @@ fn index_to_chunk_offsets(
     let mut remaining = index as u64;
     for d in (0..rank).rev() {
         let nchunks = num_chunks_per_dim[d];
+        if nchunks == 0 {
+            continue;
+        }
         let chunk_idx = remaining % nchunks;
         remaining /= nchunks;
         offsets[d] = chunk_idx * chunk_dimensions[d] as u64;
@@ -283,6 +294,11 @@ fn read_data_block_elements(
     let mut pos = db_offset + db_header_size + blk_off_size;
 
     // Check if paged
+    if header.max_nelmts_bits >= usize::BITS as u8 {
+        return Err(FormatError::Overflow(
+            "max_nelmts_bits exceeds usize bit width".into(),
+        ));
+    }
     let page_nelmts = 1usize << header.max_nelmts_bits;
     let is_paged = nelmts > page_nelmts;
 
@@ -337,7 +353,11 @@ fn read_data_block_elements(
 
             let elems_this_page = if page_idx == npages - 1 {
                 let remainder = nelmts % page_nelmts;
-                if remainder == 0 { page_nelmts } else { remainder }
+                if remainder == 0 {
+                    page_nelmts
+                } else {
+                    remainder
+                }
             } else {
                 page_nelmts
             };
@@ -391,13 +411,18 @@ pub fn read_extensible_array_chunks(
 
     let mut num_chunks_per_dim = Vec::with_capacity(rank);
     for d in 0..rank {
-        let ds_dim = dataset_dims[d];
         let ch_dim = chunk_dimensions[d] as u64;
+        if ch_dim == 0 {
+            return Err(FormatError::ChunkedReadError(
+                "chunk dimension is zero".into(),
+            ));
+        }
+        let ds_dim = dataset_dims[d];
         num_chunks_per_dim.push(ds_dim.div_ceil(ch_dim));
     }
 
-    let chunk_byte_size: u64 = chunk_dimensions.iter().map(|&d| d as u64).product::<u64>()
-        * element_size as u64;
+    let chunk_byte_size: u64 =
+        chunk_dimensions.iter().map(|&d| d as u64).product::<u64>() * element_size as u64;
 
     // Parse index block (AEIB)
     let ib_offset = header.index_block_address as usize;
@@ -462,6 +487,11 @@ pub fn read_extensible_array_chunks(
     {
         let mut nelmts = min_dblk;
         for sb_level in 0..sblk_min {
+            if sb_level >= usize::BITS as usize {
+                return Err(FormatError::Overflow(
+                    "sb_level exceeds usize bit width".into(),
+                ));
+            }
             let ndblks = 1usize << sb_level;
             for _ in 0..ndblks {
                 dblk_sizes.push(nelmts);
@@ -530,6 +560,11 @@ pub fn read_extensible_array_chunks(
         }
 
         while covered < remaining_elements {
+            if sb_level >= usize::BITS as usize {
+                return Err(FormatError::Overflow(
+                    "sb_level exceeds usize bit width".into(),
+                ));
+            }
             let ndblks = 1usize << sb_level;
             nelmts_per_dblk *= 2;
             let total_in_sb = ndblks * nelmts_per_dblk;
@@ -656,17 +691,32 @@ mod tests {
         let num_chunks = vec![5u64];
         let chunk_dims = vec![20u32];
         assert_eq!(index_to_chunk_offsets(0, &num_chunks, &chunk_dims), vec![0]);
-        assert_eq!(index_to_chunk_offsets(1, &num_chunks, &chunk_dims), vec![20]);
-        assert_eq!(index_to_chunk_offsets(4, &num_chunks, &chunk_dims), vec![80]);
+        assert_eq!(
+            index_to_chunk_offsets(1, &num_chunks, &chunk_dims),
+            vec![20]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(4, &num_chunks, &chunk_dims),
+            vec![80]
+        );
     }
 
     #[test]
     fn index_to_offsets_2d() {
         let num_chunks = vec![3u64, 2];
         let chunk_dims = vec![4u32, 3];
-        assert_eq!(index_to_chunk_offsets(0, &num_chunks, &chunk_dims), vec![0, 0]);
-        assert_eq!(index_to_chunk_offsets(1, &num_chunks, &chunk_dims), vec![0, 3]);
-        assert_eq!(index_to_chunk_offsets(2, &num_chunks, &chunk_dims), vec![4, 0]);
+        assert_eq!(
+            index_to_chunk_offsets(0, &num_chunks, &chunk_dims),
+            vec![0, 0]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(1, &num_chunks, &chunk_dims),
+            vec![0, 3]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(2, &num_chunks, &chunk_dims),
+            vec![4, 0]
+        );
     }
 
     #[test]
@@ -770,16 +820,9 @@ mod tests {
         let header = ExtensibleArrayHeader::parse(&file_data, aehd_offset, os, ls).unwrap();
         let ds_dims = vec![40u64]; // 2 chunks × 20 elements
         let chunk_dims = vec![20u32];
-        let chunks = read_extensible_array_chunks(
-            &file_data,
-            &header,
-            &ds_dims,
-            &chunk_dims,
-            8,
-            os,
-            ls,
-        )
-        .unwrap();
+        let chunks =
+            read_extensible_array_chunks(&file_data, &header, &ds_dims, &chunk_dims, 8, os, ls)
+                .unwrap();
 
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].address, base_addr);
@@ -880,10 +923,9 @@ mod tests {
         let header = ExtensibleArrayHeader::parse(&file_data, aehd_offset, os, ls).unwrap();
         let ds_dims = vec![40u64];
         let chunk_dims = vec![10u32];
-        let chunks = read_extensible_array_chunks(
-            &file_data, &header, &ds_dims, &chunk_dims, 8, os, ls,
-        )
-        .unwrap();
+        let chunks =
+            read_extensible_array_chunks(&file_data, &header, &ds_dims, &chunk_dims, 8, os, ls)
+                .unwrap();
 
         assert_eq!(chunks.len(), 4);
         for (i, c) in chunks.iter().enumerate() {
@@ -907,10 +949,8 @@ mod tests {
         let data = vec![0xFFu8; 16];
         let num_chunks = vec![5u64];
         let chunk_dims = vec![10u32];
-        let (info, consumed) = read_element(
-            &data, 0, 0, 8, 8, 80, 0, &num_chunks, &chunk_dims,
-        )
-        .unwrap();
+        let (info, consumed) =
+            read_element(&data, 0, 0, 8, 8, 80, 0, &num_chunks, &chunk_dims).unwrap();
         assert!(info.is_none());
         assert_eq!(consumed, 8);
     }
@@ -932,7 +972,15 @@ mod tests {
         let num_chunks = vec![5u64];
         let chunk_dims = vec![10u32];
         let (info, consumed) = read_element(
-            &data, 0, 1, elem_size as u8, os, 80, 2, &num_chunks, &chunk_dims,
+            &data,
+            0,
+            1,
+            elem_size as u8,
+            os,
+            80,
+            2,
+            &num_chunks,
+            &chunk_dims,
         )
         .unwrap();
         let ci = info.unwrap();

@@ -1,8 +1,6 @@
 //! Integration tests for HDF5 reference type reading.
 
-use rustyhdf5_format::data_read::{
-    read_object_references, read_region_references,
-};
+use rustyhdf5_format::data_read::{read_object_references, read_region_references};
 use rustyhdf5_format::datatype::{Datatype, ReferenceType};
 
 #[test]
@@ -208,11 +206,9 @@ print('ok')
     let mut refs_addr = None;
     for msg in &root_oh.messages {
         if msg.msg_type == rustyhdf5_format::message_type::MessageType::Link {
-            let link = rustyhdf5_format::link_message::LinkMessage::parse(
-                &msg.data,
-                sb.offset_size,
-            )
-            .unwrap();
+            let link =
+                rustyhdf5_format::link_message::LinkMessage::parse(&msg.data, sb.offset_size)
+                    .unwrap();
             if link.name == "refs" {
                 if let rustyhdf5_format::link_message::LinkTarget::Hard {
                     object_header_address,
@@ -243,19 +239,20 @@ print('ok')
                 found_dt = Some(dt);
             }
             rustyhdf5_format::message_type::MessageType::Dataspace => {
-                found_ds = Some(rustyhdf5_format::dataspace::Dataspace::parse(
-                    &msg.data,
-                    sb.length_size,
-                )
-                .unwrap());
+                found_ds = Some(
+                    rustyhdf5_format::dataspace::Dataspace::parse(&msg.data, sb.length_size)
+                        .unwrap(),
+                );
             }
             rustyhdf5_format::message_type::MessageType::DataLayout => {
-                found_layout = Some(rustyhdf5_format::data_layout::DataLayout::parse(
-                    &msg.data,
-                    sb.offset_size,
-                    sb.length_size,
-                )
-                .unwrap());
+                found_layout = Some(
+                    rustyhdf5_format::data_layout::DataLayout::parse(
+                        &msg.data,
+                        sb.offset_size,
+                        sb.length_size,
+                    )
+                    .unwrap(),
+                );
             }
             _ => {}
         }
@@ -273,13 +270,8 @@ print('ok')
         _ => panic!("expected Reference datatype, got {:?}", ref_dt),
     }
 
-    let raw = rustyhdf5_format::data_read::read_raw_data(
-        &file_data,
-        &ref_layout,
-        &ref_ds,
-        &ref_dt,
-    )
-    .unwrap();
+    let raw = rustyhdf5_format::data_read::read_raw_data(&file_data, &ref_layout, &ref_ds, &ref_dt)
+        .unwrap();
 
     let obj_refs = read_object_references(&raw, &ref_dt, sb.offset_size).unwrap();
     assert_eq!(obj_refs.len(), 2);

@@ -21,7 +21,9 @@ fn h5py_read(_path: &std::path::Path, script: &str) -> String {
 #[test]
 fn h5py_reads_our_f64_dataset() {
     let mut fw = FileWriter::new();
-    fw.create_dataset("data").with_f64_data(&[1.0, 2.0, 3.0]).with_shape(&[3]);
+    fw.create_dataset("data")
+        .with_f64_data(&[1.0, 2.0, 3.0])
+        .with_shape(&[3]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_test_f64.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -141,7 +143,8 @@ fn h5py_reads_our_compound_dataset() {
     raw.extend_from_slice(&20i32.to_le_bytes());
 
     let mut fw = FileWriter::new();
-    fw.create_dataset("particles").with_compound_data(ct, raw, 2);
+    fw.create_dataset("particles")
+        .with_compound_data(ct, raw, 2);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_compound.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -165,7 +168,8 @@ fn h5py_reads_our_enum_dataset() {
         .build();
 
     let mut fw = FileWriter::new();
-    fw.create_dataset("colors").with_enum_i32_data(et, &[1, 0, 2]);
+    fw.create_dataset("colors")
+        .with_enum_i32_data(et, &[1, 0, 2]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_enum.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -187,7 +191,10 @@ fn h5py_reads_our_array_dataset() {
 
     let mut fw = FileWriter::new();
     fw.create_dataset("vectors").with_array_data(
-        rustyhdf5_format::type_builders::make_f64_type(), &[3], raw, 2,
+        rustyhdf5_format::type_builders::make_f64_type(),
+        &[3],
+        raw,
+        2,
     );
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_array.h5");
@@ -199,7 +206,10 @@ fn h5py_reads_our_array_dataset() {
     let stdout = h5py_read(&path, &script);
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(v["shape"], serde_json::json!([2]));
-    assert_eq!(v["values"], serde_json::json!([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
+    assert_eq!(
+        v["values"],
+        serde_json::json!([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    );
 }
 
 #[test]
@@ -222,18 +232,42 @@ f.close()
     let sig = rustyhdf5_format::signature::find_signature(&bytes).unwrap();
     let sb = rustyhdf5_format::superblock::Superblock::parse(&bytes, sig).unwrap();
     let addr = rustyhdf5_format::group_v2::resolve_path_any(&bytes, &sb, "particles").unwrap();
-    let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::DataLayout).unwrap().data;
+    let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(
+        &bytes,
+        addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = rustyhdf5_format::datatype::Datatype::parse(dt_data).unwrap();
     let ds = rustyhdf5_format::dataspace::Dataspace::parse(ds_data, sb.length_size).unwrap();
-    let dl = rustyhdf5_format::data_layout::DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
+    let dl =
+        rustyhdf5_format::data_layout::DataLayout::parse(dl_data, sb.offset_size, sb.length_size)
+            .unwrap();
     let raw = rustyhdf5_format::data_read::read_raw_data(&bytes, &dl, &ds, &dt).unwrap();
     let fields = rustyhdf5_format::data_read::read_compound_fields(&raw, &dt).unwrap();
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].name, "x");
-    let x_vals = rustyhdf5_format::data_read::read_as_f64(&fields[0].raw_data, &fields[0].datatype).unwrap();
+    let x_vals =
+        rustyhdf5_format::data_read::read_as_f64(&fields[0].raw_data, &fields[0].datatype).unwrap();
     assert_eq!(x_vals, vec![1.0, 3.0]);
 }
 
@@ -257,13 +291,36 @@ f.close()
     let sig = rustyhdf5_format::signature::find_signature(&bytes).unwrap();
     let sb = rustyhdf5_format::superblock::Superblock::parse(&bytes, sig).unwrap();
     let addr = rustyhdf5_format::group_v2::resolve_path_any(&bytes, &sb, "colors").unwrap();
-    let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::DataLayout).unwrap().data;
+    let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(
+        &bytes,
+        addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = rustyhdf5_format::datatype::Datatype::parse(dt_data).unwrap();
     let ds = rustyhdf5_format::dataspace::Dataspace::parse(ds_data, sb.length_size).unwrap();
-    let dl = rustyhdf5_format::data_layout::DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
+    let dl =
+        rustyhdf5_format::data_layout::DataLayout::parse(dl_data, sb.offset_size, sb.length_size)
+            .unwrap();
     let raw = rustyhdf5_format::data_read::read_raw_data(&bytes, &dl, &ds, &dt).unwrap();
     let names = rustyhdf5_format::data_read::read_enum_names(&raw, &dt).unwrap();
     assert_eq!(names, vec!["GREEN", "RED", "BLUE", "GREEN"]);
@@ -275,7 +332,10 @@ f.close()
 fn h5py_reads_chunked_no_compression() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..100).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[100]).with_chunks(&[20]);
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[100])
+        .with_chunks(&[20]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_chunked_nocomp.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -294,7 +354,11 @@ fn h5py_reads_chunked_no_compression() {
 fn h5py_reads_chunked_deflate() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..100).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[100]).with_chunks(&[20]).with_deflate(6);
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[100])
+        .with_chunks(&[20])
+        .with_deflate(6);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_chunked_deflate.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -313,7 +377,12 @@ fn h5py_reads_chunked_deflate() {
 fn h5py_reads_chunked_shuffle_deflate() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..100).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[100]).with_chunks(&[50]).with_shuffle().with_deflate(6);
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[100])
+        .with_chunks(&[50])
+        .with_shuffle()
+        .with_deflate(6);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_chunked_shuffle_deflate.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -333,7 +402,11 @@ fn h5py_reads_chunked_shuffle_deflate() {
 fn h5py_reads_chunked_fletcher32() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..100).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[100]).with_chunks(&[100]).with_fletcher32();
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[100])
+        .with_chunks(&[100])
+        .with_fletcher32();
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_chunked_fletcher32.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -352,7 +425,10 @@ fn h5py_reads_chunked_fletcher32() {
 fn h5py_reads_chunked_2d() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..24).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[4, 6]).with_chunks(&[2, 3]);
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[4, 6])
+        .with_chunks(&[2, 3]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_chunked_2d.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -371,7 +447,9 @@ fn h5py_reads_chunked_2d() {
 #[test]
 fn h5py_reads_2d_data() {
     let mut fw = FileWriter::new();
-    fw.create_dataset("matrix").with_f64_data(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).with_shape(&[2, 3]);
+    fw.create_dataset("matrix")
+        .with_f64_data(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .with_shape(&[2, 3]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_test_2d.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -391,7 +469,11 @@ fn h5py_reads_2d_data() {
 fn h5py_reads_resizable_dataset() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..50).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[50]).with_chunks(&[10]).with_maxshape(&[u64::MAX]);
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[50])
+        .with_chunks(&[10])
+        .with_maxshape(&[u64::MAX]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_ea_resizable.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -419,19 +501,55 @@ fn read_h5py_generated_ea_file() {
     let sig = rustyhdf5_format::signature::find_signature(&bytes).unwrap();
     let sb = rustyhdf5_format::superblock::Superblock::parse(&bytes, sig).unwrap();
     let addr = rustyhdf5_format::group_v2::resolve_path_any(&bytes, &sb, "data").unwrap();
-    let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::DataLayout).unwrap().data;
+    let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(
+        &bytes,
+        addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = rustyhdf5_format::datatype::Datatype::parse(dt_data).unwrap();
     let ds = rustyhdf5_format::dataspace::Dataspace::parse(ds_data, sb.length_size).unwrap();
-    let dl = rustyhdf5_format::data_layout::DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
+    let dl =
+        rustyhdf5_format::data_layout::DataLayout::parse(dl_data, sb.offset_size, sb.length_size)
+            .unwrap();
     let raw = match &dl {
         rustyhdf5_format::data_layout::DataLayout::Chunked { .. } => {
-            let pipeline = hdr.messages.iter()
+            let pipeline = hdr
+                .messages
+                .iter()
                 .find(|m| m.msg_type == rustyhdf5_format::message_type::MessageType::FilterPipeline)
-                .map(|m| rustyhdf5_format::filter_pipeline::FilterPipeline::parse(&m.data).unwrap());
-            rustyhdf5_format::chunked_read::read_chunked_data(&bytes, &dl, &ds, &dt, pipeline.as_ref(), sb.offset_size, sb.length_size).unwrap()
+                .map(|m| {
+                    rustyhdf5_format::filter_pipeline::FilterPipeline::parse(&m.data).unwrap()
+                });
+            rustyhdf5_format::chunked_read::read_chunked_data(
+                &bytes,
+                &dl,
+                &ds,
+                &dt,
+                pipeline.as_ref(),
+                sb.offset_size,
+                sb.length_size,
+            )
+            .unwrap()
         }
         _ => rustyhdf5_format::data_read::read_raw_data(&bytes, &dl, &ds, &dt).unwrap(),
     };
@@ -444,7 +562,11 @@ fn read_h5py_generated_ea_file() {
 fn h5py_append_and_verify() {
     let mut fw = FileWriter::new();
     let initial: Vec<f64> = (0..10).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&initial).with_shape(&[10]).with_chunks(&[10]).with_maxshape(&[u64::MAX]);
+    fw.create_dataset("data")
+        .with_f64_data(&initial)
+        .with_shape(&[10])
+        .with_chunks(&[10])
+        .with_maxshape(&[u64::MAX]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_ea_append.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -482,7 +604,11 @@ print(json.dumps({{'values': result, 'shape': shape}}))
 fn h5py_reads_resizable_single_chunk() {
     let mut fw = FileWriter::new();
     let data: Vec<f64> = (0..5).map(|i| i as f64).collect();
-    fw.create_dataset("data").with_f64_data(&data).with_shape(&[5]).with_chunks(&[10]).with_maxshape(&[u64::MAX]);
+    fw.create_dataset("data")
+        .with_f64_data(&data)
+        .with_shape(&[5])
+        .with_chunks(&[10])
+        .with_maxshape(&[u64::MAX]);
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_ea_single.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -566,8 +692,11 @@ print(json.dumps({{'num_attrs': len(attrs), 'first': attrs.get('attr_000'), 'las
 fn h5py_reads_provenance_attrs() {
     let mut fw = FileWriter::new();
     let ds = fw.create_dataset("sensor");
-    ds.with_f64_data(&[1.0, 2.0, 3.0, 4.0])
-        .with_provenance("rustyhdf5/test", "2026-02-19T12:00:00Z", Some("bench_42"));
+    ds.with_f64_data(&[1.0, 2.0, 3.0, 4.0]).with_provenance(
+        "rustyhdf5/test",
+        "2026-02-19T12:00:00Z",
+        Some("bench_42"),
+    );
     let bytes = fw.finish().unwrap();
     let path = std::env::temp_dir().join("rustyhdf5_provenance.h5");
     std::fs::write(&path, &bytes).unwrap();
@@ -649,8 +778,11 @@ print(json.dumps({{'attrs': attr_names, 'sha_ok': sha == expected, 'has_source':
 fn provenance_verify_written_file() {
     let mut fw = FileWriter::new();
     let ds = fw.create_dataset("values");
-    ds.with_f64_data(&[100.0, 200.0, 300.0])
-        .with_provenance("integrity-test", "2026-02-19T00:00:00Z", None);
+    ds.with_f64_data(&[100.0, 200.0, 300.0]).with_provenance(
+        "integrity-test",
+        "2026-02-19T00:00:00Z",
+        None,
+    );
     let bytes = fw.finish().unwrap();
 
     // Use our verification API to check integrity
@@ -658,10 +790,14 @@ fn provenance_verify_written_file() {
     let sb = rustyhdf5_format::superblock::Superblock::parse(&bytes, sig).unwrap();
     let addr = rustyhdf5_format::group_v2::resolve_path_any(&bytes, &sb, "values").unwrap();
     let hdr = rustyhdf5_format::object_header::ObjectHeader::parse(
-        &bytes, addr as usize, sb.offset_size, sb.length_size,
-    ).unwrap();
-    let result = rustyhdf5_format::provenance::verify_dataset(
-        &bytes, &hdr, sb.offset_size, sb.length_size,
-    ).unwrap();
+        &bytes,
+        addr as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
+    let result =
+        rustyhdf5_format::provenance::verify_dataset(&bytes, &hdr, sb.offset_size, sb.length_size)
+            .unwrap();
     assert_eq!(result, rustyhdf5_format::provenance::VerifyResult::Ok);
 }

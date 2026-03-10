@@ -26,9 +26,9 @@ pub struct FixedArrayHeader {
 
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -82,9 +82,9 @@ impl FixedArrayHeader {
 
         let version = d[4];
         if version != 0 {
-            return Err(FormatError::ChunkedReadError(
-                format!("unsupported Fixed Array header version: {version}"),
-            ));
+            return Err(FormatError::ChunkedReadError(format!(
+                "unsupported Fixed Array header version: {version}"
+            )));
         }
 
         let client_id = d[5];
@@ -163,23 +163,44 @@ pub fn read_fixed_array_chunks(
     // Chunks are stored in row-major order within the dataset space
     let mut num_chunks_per_dim = Vec::with_capacity(rank);
     for d_idx in 0..rank {
-        let ds_dim = dataset_dims[d_idx];
         let ch_dim = chunk_dimensions[d_idx] as u64;
+        if ch_dim == 0 {
+            return Err(FormatError::ChunkedReadError(
+                "chunk dimension is zero".into(),
+            ));
+        }
+        let ds_dim = dataset_dims[d_idx];
         num_chunks_per_dim.push(ds_dim.div_ceil(ch_dim));
     }
 
-    let chunk_byte_size: u64 = chunk_dimensions.iter().map(|&d| d as u64).product::<u64>()
-        * element_size as u64;
+    let chunk_byte_size: u64 =
+        chunk_dimensions.iter().map(|&d| d as u64).product::<u64>() * element_size as u64;
 
     let mut chunks = Vec::new();
 
     for i in 0..num_elements {
-        let elem_data = &file_data[db_offset + pos..];
+        let abs_pos = db_offset
+            .checked_add(pos)
+            .ok_or(FormatError::UnexpectedEof {
+                expected: usize::MAX,
+                available: file_data.len(),
+            })?;
+        if abs_pos > file_data.len() {
+            return Err(FormatError::UnexpectedEof {
+                expected: abs_pos,
+                available: file_data.len(),
+            });
+        }
+        let elem_data = &file_data[abs_pos..];
         if header.client_id == 0 {
             // Non-filtered: just address
-            if pos + os > file_data.len() - db_offset {
+            if db_offset
+                .checked_add(pos)
+                .and_then(|p| p.checked_add(os))
+                .is_none_or(|end| end > file_data.len())
+            {
                 return Err(FormatError::UnexpectedEof {
-                    expected: db_offset + pos + os,
+                    expected: db_offset.saturating_add(pos).saturating_add(os),
                     available: file_data.len(),
                 });
             }
@@ -199,11 +220,21 @@ pub fn read_fixed_array_chunks(
             });
         } else {
             // Filtered: address(offset_size) + chunk_size(variable) + filter_mask(4)
-            let chunk_size_bytes = header.element_size as usize - os - 4;
+            let es = header.element_size as usize;
+            if es < os + 4 {
+                return Err(FormatError::ChunkedReadError(
+                    "element_size too small for filtered element".into(),
+                ));
+            }
+            let chunk_size_bytes = es - os - 4;
             let elem_total = os + chunk_size_bytes + 4;
-            if pos + elem_total > file_data.len() - db_offset {
+            if db_offset
+                .checked_add(pos)
+                .and_then(|p| p.checked_add(elem_total))
+                .is_none_or(|end| end > file_data.len())
+            {
                 return Err(FormatError::UnexpectedEof {
-                    expected: db_offset + pos + elem_total,
+                    expected: db_offset.saturating_add(pos).saturating_add(elem_total),
                     available: file_data.len(),
                 });
             }
@@ -250,6 +281,9 @@ fn index_to_chunk_offsets(
     let mut remaining = index as u64;
     for d in (0..rank).rev() {
         let nchunks = num_chunks_per_dim[d];
+        if nchunks == 0 {
+            continue;
+        }
         let chunk_idx = remaining % nchunks;
         remaining /= nchunks;
         offsets[d] = chunk_idx * chunk_dimensions[d] as u64;
@@ -280,8 +314,14 @@ mod tests {
         let num_chunks = vec![5u64];
         let chunk_dims = vec![20u32];
         assert_eq!(index_to_chunk_offsets(0, &num_chunks, &chunk_dims), vec![0]);
-        assert_eq!(index_to_chunk_offsets(1, &num_chunks, &chunk_dims), vec![20]);
-        assert_eq!(index_to_chunk_offsets(4, &num_chunks, &chunk_dims), vec![80]);
+        assert_eq!(
+            index_to_chunk_offsets(1, &num_chunks, &chunk_dims),
+            vec![20]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(4, &num_chunks, &chunk_dims),
+            vec![80]
+        );
     }
 
     #[test]
@@ -289,17 +329,35 @@ mod tests {
         // 10x6 dataset with 4x3 chunks => ceil(10/4)=3, ceil(6/3)=2 => 6 chunks
         let num_chunks = vec![3u64, 2];
         let chunk_dims = vec![4u32, 3];
-        assert_eq!(index_to_chunk_offsets(0, &num_chunks, &chunk_dims), vec![0, 0]);
-        assert_eq!(index_to_chunk_offsets(1, &num_chunks, &chunk_dims), vec![0, 3]);
-        assert_eq!(index_to_chunk_offsets(2, &num_chunks, &chunk_dims), vec![4, 0]);
-        assert_eq!(index_to_chunk_offsets(3, &num_chunks, &chunk_dims), vec![4, 3]);
-        assert_eq!(index_to_chunk_offsets(5, &num_chunks, &chunk_dims), vec![8, 3]);
+        assert_eq!(
+            index_to_chunk_offsets(0, &num_chunks, &chunk_dims),
+            vec![0, 0]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(1, &num_chunks, &chunk_dims),
+            vec![0, 3]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(2, &num_chunks, &chunk_dims),
+            vec![4, 0]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(3, &num_chunks, &chunk_dims),
+            vec![4, 3]
+        );
+        assert_eq!(
+            index_to_chunk_offsets(5, &num_chunks, &chunk_dims),
+            vec![8, 3]
+        );
     }
 
     #[test]
     fn read_variable_length_values() {
         assert_eq!(read_variable_length(&[0x78, 0x56], 2).unwrap(), 0x5678);
-        assert_eq!(read_variable_length(&[0x01, 0x02, 0x03, 0x04], 4).unwrap(), 0x04030201);
+        assert_eq!(
+            read_variable_length(&[0x01, 0x02, 0x03, 0x04], 4).unwrap(),
+            0x04030201
+        );
         assert_eq!(read_variable_length(&[0xFF], 1).unwrap(), 0xFF);
     }
 
@@ -382,13 +440,20 @@ mod tests {
             file_data[pos..pos + os].copy_from_slice(&addr.to_le_bytes());
         }
 
-        let header = FixedArrayHeader::parse(&file_data, fahd_offset, offset_size, length_size)
-            .unwrap();
+        let header =
+            FixedArrayHeader::parse(&file_data, fahd_offset, offset_size, length_size).unwrap();
         let ds_dims = vec![100u64];
         let chunk_dims = vec![20u32];
         let chunks = read_fixed_array_chunks(
-            &file_data, &header, &ds_dims, &chunk_dims, 8, offset_size, length_size,
-        ).unwrap();
+            &file_data,
+            &header,
+            &ds_dims,
+            &chunk_dims,
+            8,
+            offset_size,
+            length_size,
+        )
+        .unwrap();
 
         assert_eq!(chunks.len(), 5);
         for (i, c) in chunks.iter().enumerate() {
@@ -445,13 +510,20 @@ mod tests {
             file_data[pos + os + 4..pos + os + 8].copy_from_slice(&fmask.to_le_bytes());
         }
 
-        let header = FixedArrayHeader::parse(&file_data, fahd_offset, offset_size, length_size)
-            .unwrap();
+        let header =
+            FixedArrayHeader::parse(&file_data, fahd_offset, offset_size, length_size).unwrap();
         let ds_dims = vec![60u64];
         let chunk_dims = vec![20u32];
         let chunks = read_fixed_array_chunks(
-            &file_data, &header, &ds_dims, &chunk_dims, 8, offset_size, length_size,
-        ).unwrap();
+            &file_data,
+            &header,
+            &ds_dims,
+            &chunk_dims,
+            8,
+            offset_size,
+            length_size,
+        )
+        .unwrap();
 
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0].address, 0x1000);

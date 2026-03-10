@@ -8,7 +8,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::error::FormatError;
 use crate::filter_pipeline::{
-    FilterPipeline, FILTER_DEFLATE, FILTER_FLETCHER32, FILTER_LZ4, FILTER_SHUFFLE, FILTER_ZSTD,
+    FILTER_DEFLATE, FILTER_FLETCHER32, FILTER_LZ4, FILTER_SHUFFLE, FILTER_ZSTD, FilterPipeline,
 };
 
 /// Apply a filter pipeline to decompress a chunk.
@@ -109,6 +109,10 @@ mod sysz {
     const Z_OK: c_int = 0;
     const Z_BUF_ERROR: c_int = -5;
 
+    /// Maximum decompressed output size (256 MiB) to prevent unbounded allocation
+    /// from malicious or corrupted compressed data.
+    const MAX_DECOMPRESS_SIZE: c_ulong = 256 * 1024 * 1024;
+
     pub(super) fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
         // Start with 8x input as estimate, grow if needed
         let mut out_len = (data.len() * 8) as c_ulong;
@@ -133,6 +137,12 @@ mod sysz {
                 Z_BUF_ERROR => {
                     // Buffer too small, double it
                     out_len *= 2;
+                    if out_len > MAX_DECOMPRESS_SIZE {
+                        return Err(format!(
+                            "system zlib decompressed output would exceed {} MiB limit",
+                            MAX_DECOMPRESS_SIZE / 1024 / 1024
+                        ));
+                    }
                     output.resize(out_len as usize, 0);
                 }
                 err => return Err(format!("system zlib uncompress failed: {err}")),
@@ -150,10 +160,7 @@ fn deflate_decompress(_data: &[u8]) -> Result<Vec<u8>, FormatError> {
 #[cfg(feature = "deflate")]
 fn deflate_compress(data: &[u8], level: u32) -> Result<Vec<u8>, FormatError> {
     use std::io::Write;
-    let mut encoder = flate2::write::ZlibEncoder::new(
-        Vec::new(),
-        flate2::Compression::new(level),
-    );
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(level));
     encoder
         .write_all(data)
         .map_err(|e| FormatError::CompressionError(e.to_string()))?;
@@ -171,7 +178,9 @@ fn deflate_compress(_data: &[u8], _level: u32) -> Result<Vec<u8>, FormatError> {
 #[cfg(feature = "lz4")]
 fn lz4_decompress(data: &[u8]) -> Result<Vec<u8>, FormatError> {
     if data.len() < 4 {
-        return Err(FormatError::DecompressionError("lz4: data too short".into()));
+        return Err(FormatError::DecompressionError(
+            "lz4: data too short".into(),
+        ));
     }
     let orig_size = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
     lz4_flex::block::decompress(&data[4..], orig_size)
@@ -201,8 +210,7 @@ fn lz4_compress(_data: &[u8]) -> Result<Vec<u8>, FormatError> {
 /// Decompress zstd data.
 #[cfg(feature = "zstd")]
 fn zstd_decompress(data: &[u8]) -> Result<Vec<u8>, FormatError> {
-    zstd::decode_all(data)
-        .map_err(|e| FormatError::DecompressionError(format!("zstd: {e}")))
+    zstd::decode_all(data).map_err(|e| FormatError::DecompressionError(format!("zstd: {e}")))
 }
 
 #[cfg(not(feature = "zstd"))]
@@ -417,7 +425,10 @@ mod tests {
         // After shuffle: [A0 B0 A1 B1 A2 B2 A3 B3]
         let data = vec![0xA0, 0xA1, 0xA2, 0xA3, 0xB0, 0xB1, 0xB2, 0xB3];
         let shuffled = shuffle_compress(&data, 4).unwrap();
-        assert_eq!(shuffled, vec![0xA0, 0xB0, 0xA1, 0xB1, 0xA2, 0xB2, 0xA3, 0xB3]);
+        assert_eq!(
+            shuffled,
+            vec![0xA0, 0xB0, 0xA1, 0xB1, 0xA2, 0xB2, 0xA3, 0xB3]
+        );
     }
 
     // --- Fletcher32 tests ---
@@ -460,7 +471,10 @@ mod tests {
         let last = with_checksum.len() - 1;
         with_checksum[last] ^= 0xFF;
         let result = fletcher32_verify(&with_checksum);
-        assert!(matches!(result, Err(FormatError::Fletcher32Mismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(FormatError::Fletcher32Mismatch { .. })
+        ));
     }
 
     // --- Pipeline tests ---

@@ -37,7 +37,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// L2 distance: each thread computes ||query - vectors[i]||^2.
+/// L2 distance: each thread computes ||query - vectors[i]||.
 pub const L2_DISTANCE: &str = r#"
 struct Params {
     dim: u32,
@@ -64,7 +64,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let diff = query[d] - vectors[base + d];
         dist = dist + diff * diff;
     }
-    scores[i] = dist;
+    scores[i] = sqrt(dist);
 }
 "#;
 

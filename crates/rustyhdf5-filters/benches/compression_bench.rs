@@ -3,7 +3,7 @@
 //! Run with specific features:
 //!   cargo bench -p rustyhdf5-filters --features lz4,zstd --bench compression_bench
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 /// Generate test data simulating 1M f64 values with a sin() pattern.
 fn generate_test_data(size: usize) -> Vec<u8> {
@@ -76,11 +76,7 @@ fn bench_parallel_deflate(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    bench_deflate,
-    bench_parallel_deflate,
-);
+criterion_group!(benches, bench_deflate, bench_parallel_deflate,);
 
 #[cfg(feature = "lz4")]
 criterion_group!(lz4_benches, bench_lz4);

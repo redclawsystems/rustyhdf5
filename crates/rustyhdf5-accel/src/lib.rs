@@ -296,10 +296,7 @@ mod tests {
         let b: Vec<f32> = (0..384).map(|i| (i as f32).cos()).collect();
         let s = scalar::dot_product(&a, &b);
         let d = dot_product(&a, &b);
-        assert!(
-            approx_eq(s, d, 0.01),
-            "scalar={s} dispatched={d}"
-        );
+        assert!(approx_eq(s, d, 0.01), "scalar={s} dispatched={d}");
     }
 
     // -----------------------------------------------------------------------
@@ -361,10 +358,7 @@ mod tests {
         let b: Vec<f32> = (0..384).map(|i| (i as f32 * 0.7).cos()).collect();
         let s = scalar::cosine_similarity(&a, &b);
         let d = cosine_similarity(&a, &b);
-        assert!(
-            approx_eq(s, d, 1e-4),
-            "scalar={s} dispatched={d}"
-        );
+        assert!(approx_eq(s, d, 1e-4), "scalar={s} dispatched={d}");
     }
 
     // -----------------------------------------------------------------------
@@ -458,10 +452,7 @@ mod tests {
         let b: Vec<f32> = (0..384).map(|i| (i as f32).cos()).collect();
         let s = scalar::l2_distance(&a, &b);
         let d = l2_distance(&a, &b);
-        assert!(
-            approx_eq(s, d, 0.01),
-            "scalar={s} dispatched={d}"
-        );
+        assert!(approx_eq(s, d, 0.01), "scalar={s} dispatched={d}");
     }
 
     // -----------------------------------------------------------------------
@@ -596,7 +587,11 @@ mod tests {
 
         // In release mode, 384-dim dot product should be < 1µs.
         // In debug mode, allow up to 20µs (no optimizations).
-        let limit_ns = if cfg!(debug_assertions) { 20_000 } else { 1_000 };
+        let limit_ns = if cfg!(debug_assertions) {
+            20_000
+        } else {
+            1_000
+        };
         assert!(
             per_call.as_nanos() < limit_ns,
             "dot product too slow: {per_call:?} per call (limit {limit_ns}ns)"
@@ -625,8 +620,14 @@ mod tests {
         assert_eq!(align_to_cache_line(0), 0);
         assert_eq!(align_to_cache_line(1), CACHE_LINE_SIZE);
         assert_eq!(align_to_cache_line(CACHE_LINE_SIZE), CACHE_LINE_SIZE);
-        assert_eq!(align_to_cache_line(CACHE_LINE_SIZE + 1), CACHE_LINE_SIZE * 2);
-        assert_eq!(align_to_cache_line(CACHE_LINE_SIZE * 3), CACHE_LINE_SIZE * 3);
+        assert_eq!(
+            align_to_cache_line(CACHE_LINE_SIZE + 1),
+            CACHE_LINE_SIZE * 2
+        );
+        assert_eq!(
+            align_to_cache_line(CACHE_LINE_SIZE * 3),
+            CACHE_LINE_SIZE * 3
+        );
     }
 
     #[test]

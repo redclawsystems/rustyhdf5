@@ -13,10 +13,10 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
 
-#[cfg(feature = "std")]
-use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 use crate::chunk_cache::ChunkCoord;
 use crate::chunked_read::ChunkInfo;
@@ -216,6 +216,12 @@ impl ChunkLayout {
             for copy in &mapping.copies {
                 let src_end = copy.src_offset + copy.len;
                 let dst_end = copy.dst_offset + copy.len;
+                debug_assert!(
+                    src_end <= data.len() && dst_end <= output.len(),
+                    "chunk copy out of bounds: src_end={src_end} data_len={} dst_end={dst_end} out_len={}",
+                    data.len(),
+                    output.len(),
+                );
                 if src_end <= data.len() && dst_end <= output.len() {
                     output[copy.dst_offset..dst_end]
                         .copy_from_slice(&data[copy.src_offset..src_end]);
@@ -412,12 +418,8 @@ mod tests {
         }
 
         // Verify assembly
-        let chunk0: Vec<u8> = (0..10u64)
-            .flat_map(|i| (i as f64).to_le_bytes())
-            .collect();
-        let chunk1: Vec<u8> = (10..20u64)
-            .flat_map(|i| (i as f64).to_le_bytes())
-            .collect();
+        let chunk0: Vec<u8> = (0..10u64).flat_map(|i| (i as f64).to_le_bytes()).collect();
+        let chunk1: Vec<u8> = (10..20u64).flat_map(|i| (i as f64).to_le_bytes()).collect();
 
         let mut output = vec![0u8; 160];
         // Find which mapping goes where
@@ -667,9 +669,7 @@ mod tests {
         for r in 0..6 {
             for c in 0..8 {
                 let idx = r * 8 + c;
-                let val = f64::from_le_bytes(
-                    output[idx * 8..(idx + 1) * 8].try_into().unwrap(),
-                );
+                let val = f64::from_le_bytes(output[idx * 8..(idx + 1) * 8].try_into().unwrap());
                 assert_eq!(val, idx as f64, "mismatch at ({r}, {c})");
             }
         }

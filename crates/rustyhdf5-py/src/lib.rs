@@ -22,8 +22,29 @@ pub(crate) use file::PyFile;
 pub(crate) use group::PyGroup;
 
 /// Convert a `rustyhdf5_rs::Error` into a `PyErr`.
+///
+/// Maps different error variants to more specific Python exception types:
+/// - I/O errors -> `PyIOError`
+/// - Format/parsing errors -> `PyValueError`
+/// - Missing dataset/path errors -> `PyKeyError`
+/// - Other errors -> `PyOSError`
 pub(crate) fn to_py_err(e: rustyhdf5_rs::Error) -> PyErr {
-    PyErr::new::<pyo3::exceptions::PyOSError, _>(e.to_string())
+    use rustyhdf5_rs::Error;
+    match &e {
+        Error::Io(_) => PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()),
+        Error::Format(_) => PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()),
+        Error::NotADataset(_) | Error::MissingMessage(_) => {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>(e.to_string())
+        }
+        Error::AlignmentError(_)
+        | Error::ZeroCopyNotContiguous
+        | Error::ZeroCopyNonNativeEndian
+        | Error::ZeroCopyTypeMismatch { .. }
+        | Error::ZeroCopyUnaligned { .. } => {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+        }
+        _ => PyErr::new::<pyo3::exceptions::PyOSError, _>(e.to_string()),
+    }
 }
 
 /// The data payload for a dataset being written.

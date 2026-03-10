@@ -7,12 +7,12 @@ extern crate alloc;
 use alloc::{vec, vec::Vec};
 
 use crate::checksum::jenkins_lookup3;
-use crate::ea_writer;
 use crate::chunk_cache::{CACHE_LINE_SIZE, align_to_cache_line};
+use crate::ea_writer;
 use crate::error::FormatError;
 use crate::filter_pipeline::{
-    FilterDescription, FilterPipeline, FILTER_DEFLATE, FILTER_FLETCHER32, FILTER_LZ4,
-    FILTER_SHUFFLE, FILTER_ZSTD,
+    FILTER_DEFLATE, FILTER_FLETCHER32, FILTER_LZ4, FILTER_SHUFFLE, FILTER_ZSTD, FilterDescription,
+    FilterPipeline,
 };
 use crate::filters::compress_chunk;
 
@@ -96,7 +96,7 @@ impl ChunkOptions {
                 filter_id: FILTER_FLETCHER32,
                 name: None,
                 flags: 0,
-                client_data: vec![],  
+                client_data: vec![],
             });
         }
 
@@ -238,9 +238,11 @@ pub fn split_into_chunks(
 }
 
 /// Parallel compression threshold: use rayon when chunk count exceeds this.
+#[allow(dead_code)]
 const PARALLEL_COMPRESS_THRESHOLD: usize = 4;
 
 /// Compress all chunks, using parallel compression when beneficial.
+#[allow(dead_code)]
 fn compress_all_chunks(
     chunks: &[(Vec<u64>, Vec<u8>)],
     pipeline: &Option<FilterPipeline>,
@@ -248,16 +250,14 @@ fn compress_all_chunks(
 ) -> Result<Vec<Vec<u8>>, FormatError> {
     #[cfg(feature = "parallel")]
     {
-        if let Some(pl) = pipeline {
-            if chunks.len() > PARALLEL_COMPRESS_THRESHOLD {
-                use rayon::prelude::*;
-                return chunks
-                    .par_iter()
-                    .map(|(_offsets, chunk_bytes)| {
-                        compress_chunk(chunk_bytes, pl, element_size)
-                    })
-                    .collect();
-            }
+        if let Some(pl) = pipeline
+            && chunks.len() > PARALLEL_COMPRESS_THRESHOLD
+        {
+            use rayon::prelude::*;
+            return chunks
+                .par_iter()
+                .map(|(_offsets, chunk_bytes)| compress_chunk(chunk_bytes, pl, element_size))
+                .collect();
         }
     }
 
@@ -286,7 +286,12 @@ pub fn serialize_v4_single_chunk_pub(
     element_size: u32,
 ) -> Vec<u8> {
     serialize_v4_single_chunk(
-        chunk_dims, chunk_address, filtered_size, filter_mask, offset_size, element_size,
+        chunk_dims,
+        chunk_address,
+        filtered_size,
+        filter_mask,
+        offset_size,
+        element_size,
     )
 }
 
@@ -446,7 +451,11 @@ pub fn build_fixed_array_at(
     // where chunk.size is the unfiltered chunk size in bytes (product of all chunk dims).
     let chunk_size_bytes: usize = if has_filters {
         let max_raw = chunks.iter().map(|c| c.raw_size).max().unwrap_or(1);
-        let log2_val = if max_raw <= 1 { 0 } else { 63 - max_raw.leading_zeros() };
+        let log2_val = if max_raw <= 1 {
+            0
+        } else {
+            63 - max_raw.leading_zeros()
+        };
         let len = 1 + ((log2_val + 8) / 8) as usize;
         len.min(8)
     } else {
@@ -542,7 +551,15 @@ pub fn build_chunked_data_at(
     options: &ChunkOptions,
     base_address: u64,
 ) -> Result<ChunkedDataResult, FormatError> {
-    build_chunked_data_at_ext(raw_data, shape, chunk_dims, element_size, options, base_address, None)
+    build_chunked_data_at_ext(
+        raw_data,
+        shape,
+        chunk_dims,
+        element_size,
+        options,
+        base_address,
+        None,
+    )
 }
 
 /// Build chunked data with absolute addresses and optional maxshape.
@@ -707,6 +724,7 @@ pub fn write_selection_to_buffer(
 
             let mut src_offset = 0usize;
 
+            #[allow(clippy::too_many_arguments)]
             fn write_hyperslab(
                 d: usize,
                 rank: usize,
@@ -790,8 +808,7 @@ pub fn write_selection_to_buffer(
                 let dst = flat * elem_size;
                 let src = pi * elem_size;
                 if dst + elem_size <= buffer.len() && src + elem_size <= new_data.len() {
-                    buffer[dst..dst + elem_size]
-                        .copy_from_slice(&new_data[src..src + elem_size]);
+                    buffer[dst..dst + elem_size].copy_from_slice(&new_data[src..src + elem_size]);
                 }
             }
         }
@@ -998,8 +1015,8 @@ mod tests {
 
     #[test]
     fn align_chunk_offset_values() {
-        use super::align_chunk_offset;
         use super::CACHE_LINE_SIZE;
+        use super::align_chunk_offset;
         let cl = CACHE_LINE_SIZE as u64;
         assert_eq!(align_chunk_offset(0), 0);
         assert_eq!(align_chunk_offset(1), cl);
@@ -1020,8 +1037,7 @@ mod tests {
             chunk_dims: Some(vec![20]),
             ..Default::default()
         };
-        let result =
-            build_chunked_data_at(&raw, &[100], &[20], 8, &options, base_address).unwrap();
+        let result = build_chunked_data_at(&raw, &[100], &[20], 8, &options, base_address).unwrap();
 
         // Parse layout to get chunk addresses (via roundtrip read)
         let file_size = base_address as usize + result.data_bytes.len();
@@ -1038,9 +1054,8 @@ mod tests {
         let datatype = make_f64_type();
 
         // Verify data roundtrips correctly
-        let output = read_chunked_data(
-            &file_data, &layout, &dataspace, &datatype, None, 8, 8,
-        ).unwrap();
+        let output =
+            read_chunked_data(&file_data, &layout, &dataspace, &datatype, None, 8, 8).unwrap();
         assert_eq!(bytes_to_f64(&output), values);
     }
 
@@ -1264,7 +1279,13 @@ mod tests {
             ..Default::default()
         };
         let result = build_chunked_data_at_ext(
-            &raw, shape, chunk_dims, 8, &options, base_address, Some(maxshape),
+            &raw,
+            shape,
+            chunk_dims,
+            8,
+            &options,
+            base_address,
+            Some(maxshape),
         )
         .unwrap();
 
@@ -1275,7 +1296,9 @@ mod tests {
         let layout = DataLayout::parse(&result.layout_message, 8, 8).unwrap();
         // Verify it uses EA index
         match &layout {
-            DataLayout::Chunked { chunk_index_type, .. } => {
+            DataLayout::Chunked {
+                chunk_index_type, ..
+            } => {
                 assert_eq!(*chunk_index_type, Some(4), "expected EA index type");
             }
             _ => panic!("expected chunked layout"),
@@ -1289,8 +1312,8 @@ mod tests {
         };
         let datatype = make_f64_type();
 
-        let output = read_chunked_data(&file_data, &layout, &dataspace, &datatype, None, 8, 8)
-            .unwrap();
+        let output =
+            read_chunked_data(&file_data, &layout, &dataspace, &datatype, None, 8, 8).unwrap();
 
         bytes_to_f64(&output)
     }
@@ -1320,20 +1343,31 @@ mod tests {
 
     #[cfg(feature = "std")]
     fn h5py_run(script: &str) -> String {
-        let o = std::process::Command::new("python3").args(["-c", script]).output().expect("python3");
-        if !o.status.success() { panic!("h5py: {}", String::from_utf8_lossy(&o.stderr)); }
+        let o = std::process::Command::new("python3")
+            .args(["-c", script])
+            .output()
+            .expect("python3");
+        if !o.status.success() {
+            panic!("h5py: {}", String::from_utf8_lossy(&o.stderr));
+        }
         String::from_utf8(o.stdout).unwrap().trim().to_string()
     }
 
     #[cfg(feature = "std")]
     #[test]
     fn h5py_reads_multiple_chunked_datasets() {
-        use crate::file_writer::{FileWriter, AttrValue};
+        use crate::file_writer::{AttrValue, FileWriter};
         let mut fw = FileWriter::new();
         let data1: Vec<f64> = (0..50).map(|i| i as f64).collect();
         let data2: Vec<f64> = (0..30).map(|i| (i * 10) as f64).collect();
-        fw.create_dataset("a").with_f64_data(&data1).with_shape(&[50]).with_chunks(&[25]);
-        fw.create_dataset("b").with_f64_data(&data2).with_shape(&[30]).with_chunks(&[10]);
+        fw.create_dataset("a")
+            .with_f64_data(&data1)
+            .with_shape(&[50])
+            .with_chunks(&[25]);
+        fw.create_dataset("b")
+            .with_f64_data(&data2)
+            .with_shape(&[30])
+            .with_chunks(&[10]);
         let bytes = fw.finish().unwrap();
         let path = std::env::temp_dir().join("rustyhdf5_chunked_multi.h5");
         std::fs::write(&path, &bytes).unwrap();
@@ -1351,10 +1385,13 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn h5py_reads_chunked_with_attrs() {
-        use crate::file_writer::{FileWriter, AttrValue};
+        use crate::file_writer::{AttrValue, FileWriter};
         let mut fw = FileWriter::new();
         let data: Vec<f64> = (0..50).map(|i| i as f64).collect();
-        fw.create_dataset("data").with_f64_data(&data).with_shape(&[50]).with_chunks(&[25])
+        fw.create_dataset("data")
+            .with_f64_data(&data)
+            .with_shape(&[50])
+            .with_chunks(&[25])
             .set_attr("units", AttrValue::String("meters".to_string()));
         let bytes = fw.finish().unwrap();
         let path = std::env::temp_dir().join("rustyhdf5_chunked_attrs.h5");

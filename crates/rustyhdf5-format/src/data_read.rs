@@ -1,13 +1,16 @@
 //! Raw data reading and typed conversion for HDF5 datasets.
 
 #[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
+use alloc::{collections::BTreeMap, format, string::String, vec, vec::Vec};
 
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
+#[cfg(feature = "std")]
 use crate::chunk_cache::ChunkCache;
-use crate::chunked_read::{read_chunked_data, read_chunked_data_cached, read_chunked_data_indexed};
+use crate::chunked_read::read_chunked_data;
+#[cfg(feature = "std")]
+use crate::chunked_read::{read_chunked_data_cached, read_chunked_data_indexed};
 use crate::data_layout::DataLayout;
 use crate::dataspace::Dataspace;
 use crate::datatype::{Datatype, DatatypeByteOrder};
@@ -27,7 +30,11 @@ pub fn read_raw_data_zerocopy<'a>(
 ) -> Result<Option<&'a [u8]>, FormatError> {
     let num_elements = dataspace.num_elements() as usize;
     let elem_size = datatype.type_size() as usize;
-    let expected_size = num_elements * elem_size;
+    let expected_size = num_elements.checked_mul(elem_size).ok_or_else(|| {
+        FormatError::Overflow(format!(
+            "num_elements({num_elements}) * elem_size({elem_size})"
+        ))
+    })?;
 
     match layout {
         DataLayout::Contiguous { address, size } => {
@@ -78,7 +85,11 @@ pub fn read_raw_data_full(
 ) -> Result<Vec<u8>, FormatError> {
     let num_elements = dataspace.num_elements() as usize;
     let elem_size = datatype.type_size() as usize;
-    let expected_size = num_elements * elem_size;
+    let expected_size = num_elements.checked_mul(elem_size).ok_or_else(|| {
+        FormatError::Overflow(format!(
+            "num_elements({num_elements}) * elem_size({elem_size})"
+        ))
+    })?;
 
     match layout {
         DataLayout::Compact { data } => {
@@ -108,9 +119,15 @@ pub fn read_raw_data_full(
             }
             Ok(file_data[addr..addr + sz].to_vec())
         }
-        DataLayout::Chunked { .. } => {
-            read_chunked_data(file_data, layout, dataspace, datatype, pipeline, offset_size, length_size)
-        }
+        DataLayout::Chunked { .. } => read_chunked_data(
+            file_data,
+            layout,
+            dataspace,
+            datatype,
+            pipeline,
+            offset_size,
+            length_size,
+        ),
         DataLayout::Virtual { .. } => Err(FormatError::UnsupportedVersion(0)),
     }
 }
@@ -120,6 +137,8 @@ pub fn read_raw_data_full(
 /// For chunked layouts the `cache` is used to avoid repeated B-tree
 /// traversals and to cache decompressed chunk data.  For compact and
 /// contiguous layouts this behaves identically to [`read_raw_data_full`].
+#[cfg(feature = "std")]
+#[allow(clippy::too_many_arguments)]
 pub fn read_raw_data_cached(
     file_data: &[u8],
     layout: &DataLayout,
@@ -131,15 +150,24 @@ pub fn read_raw_data_cached(
     cache: &ChunkCache,
 ) -> Result<Vec<u8>, FormatError> {
     match layout {
-        DataLayout::Chunked { .. } => {
-            read_chunked_data_cached(
-                file_data, layout, dataspace, datatype, pipeline,
-                offset_size, length_size, cache,
-            )
-        }
+        DataLayout::Chunked { .. } => read_chunked_data_cached(
+            file_data,
+            layout,
+            dataspace,
+            datatype,
+            pipeline,
+            offset_size,
+            length_size,
+            cache,
+        ),
         _ => read_raw_data_full(
-            file_data, layout, dataspace, datatype, pipeline,
-            offset_size, length_size,
+            file_data,
+            layout,
+            dataspace,
+            datatype,
+            pipeline,
+            offset_size,
+            length_size,
         ),
     }
 }
@@ -150,6 +178,8 @@ pub fn read_raw_data_cached(
 /// which pre-computes contiguous row-copy operations, eliminating per-element
 /// N-D coordinate math on repeated reads.  For compact and contiguous layouts
 /// this behaves identically to [`read_raw_data_full`].
+#[cfg(feature = "std")]
+#[allow(clippy::too_many_arguments)]
 pub fn read_raw_data_indexed(
     file_data: &[u8],
     layout: &DataLayout,
@@ -161,15 +191,24 @@ pub fn read_raw_data_indexed(
     cache: &ChunkCache,
 ) -> Result<Vec<u8>, FormatError> {
     match layout {
-        DataLayout::Chunked { .. } => {
-            read_chunked_data_indexed(
-                file_data, layout, dataspace, datatype, pipeline,
-                offset_size, length_size, cache,
-            )
-        }
+        DataLayout::Chunked { .. } => read_chunked_data_indexed(
+            file_data,
+            layout,
+            dataspace,
+            datatype,
+            pipeline,
+            offset_size,
+            length_size,
+            cache,
+        ),
         _ => read_raw_data_full(
-            file_data, layout, dataspace, datatype, pipeline,
-            offset_size, length_size,
+            file_data,
+            layout,
+            dataspace,
+            datatype,
+            pipeline,
+            offset_size,
+            length_size,
         ),
     }
 }
@@ -179,6 +218,7 @@ pub fn read_raw_data_indexed(
 /// For chunked layouts, only chunks that intersect the selection are read
 /// and decompressed. For compact/contiguous layouts, the full data is read
 /// and then the selection is extracted.
+#[allow(clippy::too_many_arguments)]
 pub fn read_raw_data_selection(
     file_data: &[u8],
     layout: &DataLayout,
@@ -194,8 +234,13 @@ pub fn read_raw_data_selection(
     match selection {
         Selection::All => {
             return read_raw_data_full(
-                file_data, layout, dataspace, datatype, pipeline,
-                offset_size, length_size,
+                file_data,
+                layout,
+                dataspace,
+                datatype,
+                pipeline,
+                offset_size,
+                length_size,
             );
         }
         Selection::None => return Ok(Vec::new()),
@@ -209,8 +254,13 @@ pub fn read_raw_data_selection(
         DataLayout::Compact { .. } | DataLayout::Contiguous { .. } => {
             // Read all data, then extract the selection
             let full_data = read_raw_data_full(
-                file_data, layout, dataspace, datatype, pipeline,
-                offset_size, length_size,
+                file_data,
+                layout,
+                dataspace,
+                datatype,
+                pipeline,
+                offset_size,
+                length_size,
             )?;
             extract_selection_from_buffer(&full_data, dims, elem_size, selection)
         }
@@ -238,14 +288,21 @@ pub fn read_raw_data_selection(
                         )
                     }
                     _ => {
-                        if let Some(addr) = btree_address {
+                        if let Some(_addr) = btree_address {
                             // Use extensible array or fixed array
                             // Fall back to full read for complex v4 index types
                             let full_data = read_raw_data_full(
-                                file_data, layout, dataspace, datatype, pipeline,
-                                offset_size, length_size,
+                                file_data,
+                                layout,
+                                dataspace,
+                                datatype,
+                                pipeline,
+                                offset_size,
+                                length_size,
                             )?;
-                            return extract_selection_from_buffer(&full_data, dims, elem_size, selection);
+                            return extract_selection_from_buffer(
+                                &full_data, dims, elem_size, selection,
+                            );
                         } else {
                             return Ok(Vec::new());
                         }
@@ -255,7 +312,11 @@ pub fn read_raw_data_selection(
                 // v3: B-tree v1
                 if let Some(addr) = btree_address {
                     crate::chunked_read::collect_chunk_info(
-                        file_data, *addr, rank + 1, offset_size, length_size,
+                        file_data,
+                        *addr,
+                        rank + 1,
+                        offset_size,
+                        length_size,
                     )?
                 } else {
                     return Ok(Vec::new());
@@ -276,15 +337,21 @@ pub fn read_raw_data_selection(
             }
 
             // Decompress only the intersecting chunks
-            let chunk_total_bytes: usize = chunk_dims.iter().map(|&d| d as usize).product::<usize>() * elem_size;
-            let element_size_u32 = elem_size as u32;
+            let _chunk_total_bytes: usize =
+                chunk_dims.iter().map(|&d| d as usize).product::<usize>() * elem_size;
+            let _element_size_u32 = elem_size as u32;
 
             // First, assemble only the intersecting chunks into a partial buffer,
             // then extract the selection. For simplicity, we assemble into a full
             // dataset buffer and extract (same as contiguous path).
             let full_data = read_raw_data_full(
-                file_data, layout, dataspace, datatype, pipeline,
-                offset_size, length_size,
+                file_data,
+                layout,
+                dataspace,
+                datatype,
+                pipeline,
+                offset_size,
+                length_size,
             )?;
             extract_selection_from_buffer(&full_data, dims, elem_size, selection)
         }
@@ -338,8 +405,9 @@ fn extract_selection_from_buffer(
             // Iterate over all selected elements
             // For each block in the hyperslab, copy the elements
             let mut out_linear = 0usize;
-            let mut block_coords = vec![0u64; rank];
+            let _block_coords = vec![0u64; rank];
 
+            #[allow(clippy::too_many_arguments)]
             fn iterate_hyperslab(
                 d: usize,
                 rank: usize,
@@ -455,11 +523,11 @@ pub fn read_as_f64_zerocopy<'a>(raw: &'a [u8], datatype: &Datatype) -> Option<&'
         ) {
             return None;
         }
-        if raw.len() % 8 != 0 {
+        if !raw.len().is_multiple_of(8) {
             return None;
         }
         let ptr = raw.as_ptr();
-        if (ptr as usize) % core::mem::align_of::<f64>() != 0 {
+        if !(ptr as usize).is_multiple_of(core::mem::align_of::<f64>()) {
             return None;
         }
         let count = raw.len() / 8;
@@ -491,11 +559,11 @@ pub fn read_as_f32_zerocopy<'a>(raw: &'a [u8], datatype: &Datatype) -> Option<&'
         ) {
             return None;
         }
-        if raw.len() % 4 != 0 {
+        if !raw.len().is_multiple_of(4) {
             return None;
         }
         let ptr = raw.as_ptr();
-        if (ptr as usize) % core::mem::align_of::<f32>() != 0 {
+        if !(ptr as usize).is_multiple_of(core::mem::align_of::<f32>()) {
             return None;
         }
         let count = raw.len() / 4;
@@ -562,17 +630,19 @@ pub fn read_as_f64(raw: &[u8], datatype: &Datatype) -> Result<Vec<f64>, FormatEr
 
     // Fast path: native-endian f64 — single bulk memcpy
     #[cfg(target_endian = "little")]
-    if matches!(datatype, Datatype::FloatingPoint { size: 8, byte_order: DatatypeByteOrder::LittleEndian, .. })
-    {
+    if matches!(
+        datatype,
+        Datatype::FloatingPoint {
+            size: 8,
+            byte_order: DatatypeByteOrder::LittleEndian,
+            ..
+        }
+    ) {
         let mut result = vec![0.0f64; count];
         // SAFETY: On LE platforms, f64 in-memory representation matches LE bytes.
         // We copy raw bytes directly into the f64 buffer.
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                raw.as_ptr(),
-                result.as_mut_ptr() as *mut u8,
-                raw.len(),
-            );
+            core::ptr::copy_nonoverlapping(raw.as_ptr(), result.as_mut_ptr() as *mut u8, raw.len());
         }
         return Ok(result);
     }
@@ -635,15 +705,19 @@ pub fn read_as_i64(raw: &[u8], datatype: &Datatype) -> Result<Vec<i64>, FormatEr
 
     // Fast path: native LE i64 — single bulk memcpy
     #[cfg(target_endian = "little")]
-    if elem_size == 8 && matches!(datatype, Datatype::FixedPoint { byte_order: DatatypeByteOrder::LittleEndian, signed: true, .. })
+    if elem_size == 8
+        && matches!(
+            datatype,
+            Datatype::FixedPoint {
+                byte_order: DatatypeByteOrder::LittleEndian,
+                signed: true,
+                ..
+            }
+        )
     {
         let mut result = vec![0i64; count];
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                raw.as_ptr(),
-                result.as_mut_ptr() as *mut u8,
-                raw.len(),
-            );
+            core::ptr::copy_nonoverlapping(raw.as_ptr(), result.as_mut_ptr() as *mut u8, raw.len());
         }
         return Ok(result);
     }
@@ -693,15 +767,17 @@ pub fn read_as_f32(raw: &[u8], datatype: &Datatype) -> Result<Vec<f32>, FormatEr
 
     // Fast path: native-endian f32 — single bulk memcpy
     #[cfg(target_endian = "little")]
-    if matches!(datatype, Datatype::FloatingPoint { size: 4, byte_order: DatatypeByteOrder::LittleEndian, .. })
-    {
+    if matches!(
+        datatype,
+        Datatype::FloatingPoint {
+            size: 4,
+            byte_order: DatatypeByteOrder::LittleEndian,
+            ..
+        }
+    ) {
         let mut result = vec![0.0f32; count];
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                raw.as_ptr(),
-                result.as_mut_ptr() as *mut u8,
-                raw.len(),
-            );
+            core::ptr::copy_nonoverlapping(raw.as_ptr(), result.as_mut_ptr() as *mut u8, raw.len());
         }
         return Ok(result);
     }
@@ -717,10 +793,16 @@ pub fn read_as_f32(raw: &[u8], datatype: &Datatype) -> Result<Vec<f32>, FormatEr
             Datatype::FloatingPoint { size: 8, .. } => {
                 result.push(read_f64_bytes(chunk, &order) as f32);
             }
-            Datatype::FixedPoint { signed: true, size, .. } => {
+            Datatype::FixedPoint {
+                signed: true, size, ..
+            } => {
                 result.push(read_signed_int(chunk, *size as usize, &order) as f32);
             }
-            Datatype::FixedPoint { signed: false, size, .. } => {
+            Datatype::FixedPoint {
+                signed: false,
+                size,
+                ..
+            } => {
                 result.push(read_unsigned_int(chunk, *size as usize, &order) as f32);
             }
             _ => {
@@ -748,15 +830,18 @@ pub fn read_as_i32(raw: &[u8], datatype: &Datatype) -> Result<Vec<i32>, FormatEr
 
     // Fast path: native LE i32 — single bulk memcpy
     #[cfg(target_endian = "little")]
-    if elem_size == 4 && matches!(datatype, Datatype::FixedPoint { byte_order: DatatypeByteOrder::LittleEndian, .. })
+    if elem_size == 4
+        && matches!(
+            datatype,
+            Datatype::FixedPoint {
+                byte_order: DatatypeByteOrder::LittleEndian,
+                ..
+            }
+        )
     {
         let mut result = vec![0i32; count];
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                raw.as_ptr(),
-                result.as_mut_ptr() as *mut u8,
-                raw.len(),
-            );
+            core::ptr::copy_nonoverlapping(raw.as_ptr(), result.as_mut_ptr() as *mut u8, raw.len());
         }
         return Ok(result);
     }
@@ -799,10 +884,7 @@ pub fn read_as_strings(raw: &[u8], datatype: &Datatype) -> Result<Vec<String>, F
                         String::from_utf8_lossy(&chunk[..end]).into_owned()
                     }
                     crate::datatype::StringPadding::SpacePad => {
-                        let end = chunk
-                            .iter()
-                            .rposition(|&b| b != b' ')
-                            .map_or(0, |p| p + 1);
+                        let end = chunk.iter().rposition(|&b| b != b' ').map_or(0, |p| p + 1);
                         String::from_utf8_lossy(&chunk[..end]).into_owned()
                     }
                 };
@@ -835,7 +917,10 @@ pub struct CompoundFieldData {
 ///
 /// Each returned `CompoundFieldData` contains the raw bytes for that field
 /// across all elements, suitable for further typed conversion with `read_as_f64`, etc.
-pub fn read_compound_fields(raw: &[u8], datatype: &Datatype) -> Result<Vec<CompoundFieldData>, FormatError> {
+pub fn read_compound_fields(
+    raw: &[u8],
+    datatype: &Datatype,
+) -> Result<Vec<CompoundFieldData>, FormatError> {
     match datatype {
         Datatype::Compound { size, members } => {
             let elem_size = *size as usize;
@@ -874,9 +959,14 @@ pub fn read_compound_fields(raw: &[u8], datatype: &Datatype) -> Result<Vec<Compo
 }
 
 /// Extract a single field by name from compound raw data.
-pub fn read_compound_field(raw: &[u8], datatype: &Datatype, field_name: &str) -> Result<CompoundFieldData, FormatError> {
+pub fn read_compound_field(
+    raw: &[u8],
+    datatype: &Datatype,
+    field_name: &str,
+) -> Result<CompoundFieldData, FormatError> {
     let fields = read_compound_fields(raw, datatype)?;
-    fields.into_iter()
+    fields
+        .into_iter()
         .find(|f| f.name == field_name)
         .ok_or_else(|| FormatError::PathNotFound(field_name.into()))
 }
@@ -918,17 +1008,25 @@ pub fn read_enum_values(raw: &[u8], datatype: &Datatype) -> Result<Vec<EnumValue
             for i in 0..count {
                 let val_bytes = raw[i * elem_size..(i + 1) * elem_size].to_vec();
                 let name = lookup.get(&val_bytes).cloned().unwrap_or_else(|| {
-                    let hex: Vec<String> = val_bytes.iter().map(|b| {
-                        let mut s = String::new();
-                        core::fmt::Write::write_fmt(&mut s, format_args!("{b:02x}")).ok();
-                        s
-                    }).collect();
+                    let hex: Vec<String> = val_bytes
+                        .iter()
+                        .map(|b| {
+                            let mut s = String::new();
+                            core::fmt::Write::write_fmt(&mut s, format_args!("{b:02x}")).ok();
+                            s
+                        })
+                        .collect();
                     let mut result = String::from("UNKNOWN(0x");
-                    for h in &hex { result.push_str(h); }
+                    for h in &hex {
+                        result.push_str(h);
+                    }
                     result.push(')');
                     result
                 });
-                result.push(EnumValue { name, raw_value: val_bytes });
+                result.push(EnumValue {
+                    name,
+                    raw_value: val_bytes,
+                });
             }
             Ok(result)
         }
@@ -1090,11 +1188,15 @@ fn read_ref_address(bytes: &[u8], size: usize) -> u64 {
 /// each dataset element contains D1*D2*... values of type T.
 /// This function returns the raw bytes as a flat buffer that can be
 /// converted with `read_as_f64`, `read_as_i32`, etc. using the base type.
-pub fn read_array_flat(raw: &[u8], datatype: &Datatype) -> Result<(Vec<u8>, Datatype, Vec<u32>), FormatError> {
+pub fn read_array_flat(
+    raw: &[u8],
+    datatype: &Datatype,
+) -> Result<(Vec<u8>, Datatype, Vec<u32>), FormatError> {
     match datatype {
-        Datatype::Array { base_type, dimensions } => {
-            Ok((raw.to_vec(), *base_type.clone(), dimensions.clone()))
-        }
+        Datatype::Array {
+            base_type,
+            dimensions,
+        } => Ok((raw.to_vec(), *base_type.clone(), dimensions.clone())),
         _ => Err(FormatError::TypeMismatch {
             expected: "Array",
             actual: datatype_name(datatype),
@@ -1566,9 +1668,18 @@ mod tests {
             size: 4,
             base_type: Box::new(make_i32_le_type()),
             members: vec![
-                EnumMember { name: "RED".to_string(), value: 0i32.to_le_bytes().to_vec() },
-                EnumMember { name: "GREEN".to_string(), value: 1i32.to_le_bytes().to_vec() },
-                EnumMember { name: "BLUE".to_string(), value: 2i32.to_le_bytes().to_vec() },
+                EnumMember {
+                    name: "RED".to_string(),
+                    value: 0i32.to_le_bytes().to_vec(),
+                },
+                EnumMember {
+                    name: "GREEN".to_string(),
+                    value: 1i32.to_le_bytes().to_vec(),
+                },
+                EnumMember {
+                    name: "BLUE".to_string(),
+                    value: 2i32.to_le_bytes().to_vec(),
+                },
             ],
         };
         let mut raw = Vec::new();
@@ -1721,12 +1832,8 @@ mod tests {
         let dt = make_f64_le_type();
         // Create aligned data — Vec<f64> guarantees 8-byte alignment
         let values = vec![1.0f64, 2.0, 3.0, 4.0];
-        let raw: &[u8] = unsafe {
-            core::slice::from_raw_parts(
-                values.as_ptr() as *const u8,
-                values.len() * 8,
-            )
-        };
+        let raw: &[u8] =
+            unsafe { core::slice::from_raw_parts(values.as_ptr() as *const u8, values.len() * 8) };
         let result = read_as_f64_zerocopy(raw, &dt);
         assert!(result.is_some(), "aligned native LE f64 should succeed");
         let slice = result.unwrap();
@@ -1739,12 +1846,8 @@ mod tests {
     fn read_as_f64_zerocopy_wrong_type() {
         let dt = make_i32_le_type();
         let values = vec![1.0f64; 4];
-        let raw: &[u8] = unsafe {
-            core::slice::from_raw_parts(
-                values.as_ptr() as *const u8,
-                values.len() * 8,
-            )
-        };
+        let raw: &[u8] =
+            unsafe { core::slice::from_raw_parts(values.as_ptr() as *const u8, values.len() * 8) };
         assert!(read_as_f64_zerocopy(raw, &dt).is_none());
     }
 
@@ -1762,12 +1865,8 @@ mod tests {
             exponent_bias: 1023,
         };
         let values = vec![1.0f64; 4];
-        let raw: &[u8] = unsafe {
-            core::slice::from_raw_parts(
-                values.as_ptr() as *const u8,
-                values.len() * 8,
-            )
-        };
+        let raw: &[u8] =
+            unsafe { core::slice::from_raw_parts(values.as_ptr() as *const u8, values.len() * 8) };
         assert!(read_as_f64_zerocopy(raw, &dt).is_none());
     }
 
@@ -1792,12 +1891,8 @@ mod tests {
             exponent_bias: 127,
         };
         let values = vec![1.5f32, 2.5, 3.5];
-        let raw: &[u8] = unsafe {
-            core::slice::from_raw_parts(
-                values.as_ptr() as *const u8,
-                values.len() * 4,
-            )
-        };
+        let raw: &[u8] =
+            unsafe { core::slice::from_raw_parts(values.as_ptr() as *const u8, values.len() * 4) };
         let result = read_as_f32_zerocopy(raw, &dt);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), &[1.5f32, 2.5, 3.5]);

@@ -1,13 +1,13 @@
 //! Robustness tests: verify parsers return errors (not panics) on malformed input.
 
-use rustyhdf5_format::error::FormatError;
-use rustyhdf5_format::superblock::Superblock;
-use rustyhdf5_format::object_header::ObjectHeader;
-use rustyhdf5_format::datatype::Datatype;
-use rustyhdf5_format::dataspace::Dataspace;
-use rustyhdf5_format::fractal_heap::FractalHeapHeader;
 use rustyhdf5_format::btree_v2::BTreeV2Header;
+use rustyhdf5_format::dataspace::Dataspace;
+use rustyhdf5_format::datatype::Datatype;
+use rustyhdf5_format::error::FormatError;
+use rustyhdf5_format::fractal_heap::FractalHeapHeader;
+use rustyhdf5_format::object_header::ObjectHeader;
 use rustyhdf5_format::signature;
+use rustyhdf5_format::superblock::Superblock;
 
 // ---- Truncated / empty inputs ----
 
@@ -109,7 +109,10 @@ fn bad_fractal_heap_version() {
     data[0..4].copy_from_slice(b"FRHP");
     data[4] = 99; // bad version
     let result = FractalHeapHeader::parse(&data, 0, 8, 8);
-    assert!(matches!(result, Err(FormatError::InvalidFractalHeapVersion(99))));
+    assert!(matches!(
+        result,
+        Err(FormatError::InvalidFractalHeapVersion(99))
+    ));
 }
 
 #[test]
@@ -118,7 +121,10 @@ fn bad_btree_v2_version() {
     data[0..4].copy_from_slice(b"BTHD");
     data[4] = 99; // bad version
     let result = BTreeV2Header::parse(&data, 0, 8, 8);
-    assert!(matches!(result, Err(FormatError::InvalidBTreeV2Version(99))));
+    assert!(matches!(
+        result,
+        Err(FormatError::InvalidBTreeV2Version(99))
+    ));
 }
 
 // ---- Random / garbage data ----
@@ -172,7 +178,9 @@ fn random_bytes_no_panic_btree_v2() {
 #[test]
 fn pseudo_fuzz_superblock() {
     for seed in 0u16..100 {
-        let data: Vec<u8> = (0..128).map(|i| ((i as u16 * seed.wrapping_add(7)) & 0xFF) as u8).collect();
+        let data: Vec<u8> = (0..128)
+            .map(|i| ((i as u16 * seed.wrapping_add(7)) & 0xFF) as u8)
+            .collect();
         let _ = signature::find_signature(&data);
         let _ = Superblock::parse(&data, 0);
     }
@@ -181,7 +189,9 @@ fn pseudo_fuzz_superblock() {
 #[test]
 fn pseudo_fuzz_object_header() {
     for seed in 0u16..100 {
-        let data: Vec<u8> = (0..512).map(|i| ((i as u16 * seed.wrapping_add(13)) & 0xFF) as u8).collect();
+        let data: Vec<u8> = (0..512)
+            .map(|i| ((i as u16 * seed.wrapping_add(13)) & 0xFF) as u8)
+            .collect();
         let _ = ObjectHeader::parse(&data, 0, 8, 8);
         let _ = ObjectHeader::parse(&data, 0, 4, 4);
     }
@@ -190,7 +200,9 @@ fn pseudo_fuzz_object_header() {
 #[test]
 fn pseudo_fuzz_datatype() {
     for seed in 0u16..100 {
-        let data: Vec<u8> = (0..128).map(|i| ((i as u16 * seed.wrapping_add(3)) & 0xFF) as u8).collect();
+        let data: Vec<u8> = (0..128)
+            .map(|i| ((i as u16 * seed.wrapping_add(3)) & 0xFF) as u8)
+            .collect();
         let _ = Datatype::parse(&data);
     }
 }
@@ -198,7 +210,9 @@ fn pseudo_fuzz_datatype() {
 #[test]
 fn pseudo_fuzz_fractal_heap() {
     for seed in 0u16..100 {
-        let data: Vec<u8> = (0..512).map(|i| ((i as u16 * seed.wrapping_add(17)) & 0xFF) as u8).collect();
+        let data: Vec<u8> = (0..512)
+            .map(|i| ((i as u16 * seed.wrapping_add(17)) & 0xFF) as u8)
+            .collect();
         let _ = FractalHeapHeader::parse(&data, 0, 8, 8);
     }
 }
@@ -206,7 +220,9 @@ fn pseudo_fuzz_fractal_heap() {
 #[test]
 fn pseudo_fuzz_btree_v2() {
     for seed in 0u16..100 {
-        let data: Vec<u8> = (0..256).map(|i| ((i as u16 * seed.wrapping_add(11)) & 0xFF) as u8).collect();
+        let data: Vec<u8> = (0..256)
+            .map(|i| ((i as u16 * seed.wrapping_add(11)) & 0xFF) as u8)
+            .collect();
         let _ = BTreeV2Header::parse(&data, 0, 8, 8);
     }
 }
@@ -224,18 +240,23 @@ fn corrupted_file_detected() {
     let sig = signature::find_signature(&bytes).unwrap();
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let _ = ObjectHeader::parse(
-        &bytes, sb.root_group_address as usize, sb.offset_size, sb.length_size,
-    ).unwrap();
+        &bytes,
+        sb.root_group_address as usize,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
 
     // Corrupt a byte in the middle of the object header
     let oh_start = sb.root_group_address as usize;
     if oh_start + 20 < bytes.len() {
         bytes[oh_start + 10] ^= 0xFF;
         // Should detect corruption via checksum
-        let result = ObjectHeader::parse(
-            &bytes, oh_start, sb.offset_size, sb.length_size,
+        let result = ObjectHeader::parse(&bytes, oh_start, sb.offset_size, sb.length_size);
+        assert!(
+            result.is_err(),
+            "corrupted object header should fail checksum"
         );
-        assert!(result.is_err(), "corrupted object header should fail checksum");
     }
 }
 
@@ -253,8 +274,12 @@ fn extract_attrs_from_dataset_no_panic() {
     let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
     // Should return empty vec, not panic
     let attrs = rustyhdf5_format::attribute::extract_attributes_full(
-        &bytes, &hdr, sb.offset_size, sb.length_size,
-    ).unwrap();
+        &bytes,
+        &hdr,
+        sb.offset_size,
+        sb.length_size,
+    )
+    .unwrap();
     assert!(attrs.is_empty());
 }
 
@@ -276,11 +301,14 @@ fn provenance_mismatch_on_corruption() {
     let sb = Superblock::parse(&bytes, sig).unwrap();
     let addr = rustyhdf5_format::group_v2::resolve_path_any(&bytes, &sb, "sensor").unwrap();
     let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let result = rustyhdf5_format::provenance::verify_dataset(
-        &bytes, &hdr, sb.offset_size, sb.length_size,
-    ).unwrap();
+    let result =
+        rustyhdf5_format::provenance::verify_dataset(&bytes, &hdr, sb.offset_size, sb.length_size)
+            .unwrap();
     assert!(
-        matches!(result, rustyhdf5_format::provenance::VerifyResult::Mismatch { .. }),
+        matches!(
+            result,
+            rustyhdf5_format::provenance::VerifyResult::Mismatch { .. }
+        ),
         "corrupted data should produce hash mismatch"
     );
 }

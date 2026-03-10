@@ -1,6 +1,6 @@
 use crate::device::DeviceInfo;
 use crate::error::{GpuError, Result};
-use crate::helpers::{bgl_entry, div_ceil, top_k_cpu, Params4, Params4U, WORKGROUP_SIZE};
+use crate::helpers::{Params4, Params4U, WORKGROUP_SIZE, bgl_entry, div_ceil, top_k_cpu};
 use crate::shaders;
 
 use bytemuck::Pod;
@@ -51,13 +51,12 @@ impl GpuAccelerator {
             ..Default::default()
         });
 
-        let adapter =
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            }))
-            .map_err(|_| GpuError::NoDevice)?;
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        }))
+        .map_err(|_| GpuError::NoDevice)?;
 
         let adapter_info = adapter.get_info();
         let adapter_limits = adapter.limits();
@@ -70,19 +69,16 @@ impl GpuAccelerator {
             max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
         };
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("rustyhdf5-gpu"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits {
-                    max_storage_buffer_binding_size: adapter_limits
-                        .max_storage_buffer_binding_size,
-                    max_buffer_size: adapter_limits.max_buffer_size,
-                    ..wgpu::Limits::default()
-                },
-                ..Default::default()
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("rustyhdf5-gpu"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits {
+                max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
+                max_buffer_size: adapter_limits.max_buffer_size,
+                ..wgpu::Limits::default()
             },
-        ))
+            ..Default::default()
+        }))
         .map_err(|e: wgpu::RequestDeviceError| GpuError::DeviceRequest(e.to_string()))?;
 
         Ok(Self {
@@ -207,8 +203,7 @@ impl GpuAccelerator {
             offset += chunk_n;
         }
 
-        all_results
-            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        all_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         all_results.truncate(k);
         Ok(all_results)
     }
@@ -252,8 +247,7 @@ impl GpuAccelerator {
             offset += chunk_n;
         }
 
-        all_results
-            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        all_results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         all_results.truncate(k);
         Ok(all_results)
     }
@@ -303,11 +297,7 @@ impl GpuAccelerator {
     }
 
     /// Batch dot product: queries [Q×D] × vectors [N×D] -> flat [Q×N] scores.
-    pub fn batch_dot_product(
-        &self,
-        queries_flat: &[f32],
-        num_queries: usize,
-    ) -> Result<Vec<f32>> {
+    pub fn batch_dot_product(&self, queries_flat: &[f32], num_queries: usize) -> Result<Vec<f32>> {
         if self.vectors_bufs.is_empty() {
             return Err(GpuError::NoVectors);
         }
@@ -405,8 +395,7 @@ impl GpuAccelerator {
             for qi in 0..num_queries {
                 let src = qi * chunk_n;
                 let dst = qi * n + col_offset;
-                flat_output[dst..dst + chunk_n]
-                    .copy_from_slice(&chunk_dists[src..src + chunk_n]);
+                flat_output[dst..dst + chunk_n].copy_from_slice(&chunk_dists[src..src + chunk_n]);
             }
             col_offset += chunk_n;
             vec_offset += chunk_n;
@@ -420,7 +409,12 @@ impl GpuAccelerator {
     /// Convert f16 values (as raw u16 bits) to f32 on the GPU.
     pub fn f16_to_f32_batch(&self, f16_bits: &[u16]) -> Result<Vec<f32>> {
         let total = f16_bits.len() as u32;
-        let params = Params4U { a: total, b: 0, c: 0, d: 0 };
+        let params = Params4U {
+            a: total,
+            b: 0,
+            c: 0,
+            d: 0,
+        };
         let packed: Vec<u32> = f16_bits
             .chunks(2)
             .map(|c| {
@@ -438,14 +432,23 @@ impl GpuAccelerator {
         );
         let module = self.make_module("f16_to_f32", shaders::F16_TO_F32);
         let pipeline = self.create_pipeline(&module, &bgl);
-        self.dispatch(&pipeline, &bind_group, div_ceil(pair_count as u32, WORKGROUP_SIZE));
+        self.dispatch(
+            &pipeline,
+            &bind_group,
+            div_ceil(pair_count as u32, WORKGROUP_SIZE),
+        );
         self.read_buffer::<f32>(&output_buf, f16_bits.len())
     }
 
     /// Convert f32 values to f16 (as raw u16 bits) on the GPU.
     pub fn f32_to_f16_batch(&self, values: &[f32]) -> Result<Vec<u16>> {
         let total = values.len() as u32;
-        let params = Params4U { a: total, b: 0, c: 0, d: 0 };
+        let params = Params4U {
+            a: total,
+            b: 0,
+            c: 0,
+            d: 0,
+        };
         let pair_count = values.len().div_ceil(2);
 
         let (_params_buf, _input_buf, output_buf, bgl, bind_group) = self.make_3bind_group(
@@ -455,7 +458,11 @@ impl GpuAccelerator {
         );
         let module = self.make_module("f32_to_f16", shaders::F32_TO_F16);
         let pipeline = self.create_pipeline(&module, &bgl);
-        self.dispatch(&pipeline, &bind_group, div_ceil(pair_count as u32, WORKGROUP_SIZE));
+        self.dispatch(
+            &pipeline,
+            &bind_group,
+            div_ceil(pair_count as u32, WORKGROUP_SIZE),
+        );
 
         let packed = self.read_buffer::<u32>(&output_buf, pair_count)?;
         let mut result = Vec::with_capacity(values.len());
@@ -585,12 +592,7 @@ impl GpuAccelerator {
         (params_buf, input_buf, output_buf, bgl, bind_group)
     }
 
-    fn run_norms_shader(
-        &self,
-        vecs_buf: &wgpu::Buffer,
-        n: usize,
-        dim: usize,
-    ) -> Result<Vec<f32>> {
+    fn run_norms_shader(&self, vecs_buf: &wgpu::Buffer, n: usize, dim: usize) -> Result<Vec<f32>> {
         let params = Params4U {
             a: dim as u32,
             b: n as u32,
@@ -706,7 +708,11 @@ impl GpuAccelerator {
             ],
         });
         let pipeline = self.create_pipeline(&module, &bgl);
-        self.dispatch(&pipeline, &bind_group, div_ceil(total_threads, WORKGROUP_SIZE));
+        self.dispatch(
+            &pipeline,
+            &bind_group,
+            div_ceil(total_threads, WORKGROUP_SIZE),
+        );
         self.read_buffer::<f32>(&output_buf, output_len)
     }
 
@@ -823,8 +829,14 @@ impl GpuAccelerator {
         ];
 
         if let Some(eb) = extra_buf {
-            entries_desc.push(bgl_entry(3, wgpu::BufferBindingType::Storage { read_only: true }));
-            entries_desc.push(bgl_entry(4, wgpu::BufferBindingType::Storage { read_only: false }));
+            entries_desc.push(bgl_entry(
+                3,
+                wgpu::BufferBindingType::Storage { read_only: true },
+            ));
+            entries_desc.push(bgl_entry(
+                4,
+                wgpu::BufferBindingType::Storage { read_only: false },
+            ));
             bind_entries.push(wgpu::BindGroupEntry {
                 binding: 3,
                 resource: eb.as_entire_binding(),
@@ -834,7 +846,10 @@ impl GpuAccelerator {
                 resource: output_buf.as_entire_binding(),
             });
         } else {
-            entries_desc.push(bgl_entry(3, wgpu::BufferBindingType::Storage { read_only: false }));
+            entries_desc.push(bgl_entry(
+                3,
+                wgpu::BufferBindingType::Storage { read_only: false },
+            ));
             bind_entries.push(wgpu::BindGroupEntry {
                 binding: 3,
                 resource: output_buf.as_entire_binding(),
@@ -1018,10 +1033,12 @@ impl GpuAccelerator {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        let _ = self.device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .map_err(|e| GpuError::BufferMap(format!("device poll failed: {e}")))?;
         rx.recv()
             .map_err(|e| GpuError::BufferMap(e.to_string()))?
             .map_err(|e| GpuError::BufferMap(e.to_string()))?;

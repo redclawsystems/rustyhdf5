@@ -153,9 +153,7 @@ mod mmap_tests {
         let mmap = MmapFile::open(&path).unwrap();
         let sensors = mmap.group("sensors").unwrap();
         let attrs = sensors.attrs().unwrap();
-        assert!(
-            matches!(attrs.get("location"), Some(AttrValue::String(s)) if s == "lab")
-        );
+        assert!(matches!(attrs.get("location"), Some(AttrValue::String(s)) if s == "lab"));
 
         std::fs::remove_file(&path).ok();
     }
@@ -251,7 +249,9 @@ mod parallel_tests {
     #[test]
     fn parallel_matches_sequential() {
         use rustyhdf5_format::chunked_read::ChunkInfo;
-        use rustyhdf5_format::filter_pipeline::{FilterDescription, FilterPipeline, FILTER_DEFLATE};
+        use rustyhdf5_format::filter_pipeline::{
+            FILTER_DEFLATE, FilterDescription, FilterPipeline,
+        };
         use rustyhdf5_format::filters::compress_chunk;
 
         let pipeline = FilterPipeline {
@@ -300,28 +300,22 @@ mod parallel_tests {
                 let addr = ci.address as usize;
                 let size = ci.chunk_size as usize;
                 let raw = &file_data[addr..addr + size];
-                rustyhdf5_format::filters::decompress_chunk(
-                    raw,
-                    &pipeline,
-                    chunk_bytes,
-                    elem_size,
-                )
-                .unwrap()
+                rustyhdf5_format::filters::decompress_chunk(raw, &pipeline, chunk_bytes, elem_size)
+                    .unwrap()
             })
             .collect();
 
         // Parallel decompression (if feature enabled)
         #[cfg(feature = "parallel")]
         {
-            let parallel =
-                rustyhdf5_format::parallel_read::decompress_chunks_parallel(
-                    &file_data,
-                    &chunk_infos,
-                    &pipeline,
-                    chunk_bytes,
-                    elem_size,
-                )
-                .unwrap();
+            let parallel = rustyhdf5_format::parallel_read::decompress_chunks_parallel(
+                &file_data,
+                &chunk_infos,
+                &pipeline,
+                chunk_bytes,
+                elem_size,
+            )
+            .unwrap();
             assert_eq!(parallel.len(), sequential.len());
             for (p, s) in parallel.iter().zip(sequential.iter()) {
                 assert_eq!(p, s);
@@ -363,7 +357,9 @@ mod fast_compression_tests {
     // Test 15: Cross-backend compress/decompress
     #[test]
     fn cross_backend_roundtrip() {
-        let data: Vec<u8> = (0..5000).map(|i| ((i as f64 * 0.1).sin() * 127.0 + 128.0) as u8).collect();
+        let data: Vec<u8> = (0..5000)
+            .map(|i| ((i as f64 * 0.1).sin() * 127.0 + 128.0) as u8)
+            .collect();
 
         // Compress with current backend, decompress with miniz
         let compressed = rustyhdf5_filters::deflate_compress(&data, 6).unwrap();
@@ -385,8 +381,7 @@ mod fast_compression_tests {
             .collect();
         let compressed = rustyhdf5_filters::deflate_compress(&data, 6).unwrap();
         assert!(compressed.len() < data.len());
-        let decompressed =
-            rustyhdf5_filters::deflate_decompress(&compressed, data.len()).unwrap();
+        let decompressed = rustyhdf5_filters::deflate_decompress(&compressed, data.len()).unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -394,8 +389,7 @@ mod fast_compression_tests {
     #[test]
     fn empty_roundtrip() {
         let compressed = rustyhdf5_filters::deflate_compress(&[], 6).unwrap();
-        let decompressed =
-            rustyhdf5_filters::deflate_decompress(&compressed, 0).unwrap();
+        let decompressed = rustyhdf5_filters::deflate_decompress(&compressed, 0).unwrap();
         assert!(decompressed.is_empty());
     }
 
@@ -444,7 +438,7 @@ mod checksum_tests {
     #[test]
     fn fletcher32_roundtrip_via_filters() {
         use rustyhdf5_format::filter_pipeline::{
-            FilterDescription, FilterPipeline, FILTER_FLETCHER32,
+            FILTER_FLETCHER32, FilterDescription, FilterPipeline,
         };
         use rustyhdf5_format::filters::{compress_chunk, decompress_chunk};
 
@@ -468,7 +462,7 @@ mod checksum_tests {
     #[test]
     fn fletcher32_large_data() {
         use rustyhdf5_format::filter_pipeline::{
-            FilterDescription, FilterPipeline, FILTER_FLETCHER32,
+            FILTER_FLETCHER32, FilterDescription, FilterPipeline,
         };
         use rustyhdf5_format::filters::{compress_chunk, decompress_chunk};
 
@@ -529,11 +523,11 @@ fn compiles_without_optional_features() {
 
 #[cfg(feature = "parallel")]
 mod parallel_metadata_tests {
-    use rustyhdf5::{create_datasets_parallel, AttrValue, DatasetSpec, File};
-    use rustyhdf5_format::error::FormatError;
-    use rustyhdf5_format::metadata_index::{MetadataBlock, MetadataIndex, build_dataset_metadata};
-    use rustyhdf5_format::file_writer::{IndependentDatasetBuilder, finalize_parallel};
+    use rustyhdf5::{AttrValue, DatasetSpec, File, create_datasets_parallel};
     use rustyhdf5_format::chunked_write::ChunkOptions;
+    use rustyhdf5_format::error::FormatError;
+    use rustyhdf5_format::file_writer::{IndependentDatasetBuilder, finalize_parallel};
+    use rustyhdf5_format::metadata_index::{MetadataBlock, MetadataIndex, build_dataset_metadata};
     use rustyhdf5_format::type_builders::make_f64_type;
 
     // Test 27: Create 100+ datasets in parallel and verify all metadata
@@ -588,9 +582,18 @@ mod parallel_metadata_tests {
 
         // Read back with standard File reader
         let file = File::from_bytes(bytes).unwrap();
-        assert_eq!(file.dataset("alpha").unwrap().read_f64().unwrap(), vec![1.0, 2.0, 3.0]);
-        assert_eq!(file.dataset("beta").unwrap().read_i32().unwrap(), vec![10, 20, 30]);
-        assert_eq!(file.dataset("gamma").unwrap().read_f64().unwrap(), vec![100.0]);
+        assert_eq!(
+            file.dataset("alpha").unwrap().read_f64().unwrap(),
+            vec![1.0, 2.0, 3.0]
+        );
+        assert_eq!(
+            file.dataset("beta").unwrap().read_i32().unwrap(),
+            vec![10, 20, 30]
+        );
+        assert_eq!(
+            file.dataset("gamma").unwrap().read_f64().unwrap(),
+            vec![100.0]
+        );
     }
 
     // Test 29: Merge detects duplicate dataset names
@@ -598,14 +601,24 @@ mod parallel_metadata_tests {
     fn parallel_merge_rejects_duplicates() {
         let mut b0 = MetadataBlock::new(0);
         b0.add_dataset(build_dataset_metadata(
-            "dup_name", make_f64_type(), vec![1], vec![0u8; 8],
-            ChunkOptions::default(), None, vec![],
+            "dup_name",
+            make_f64_type(),
+            vec![1],
+            vec![0u8; 8],
+            ChunkOptions::default(),
+            None,
+            vec![],
         ));
 
         let mut b1 = MetadataBlock::new(1);
         b1.add_dataset(build_dataset_metadata(
-            "dup_name", make_f64_type(), vec![1], vec![0u8; 8],
-            ChunkOptions::default(), None, vec![],
+            "dup_name",
+            make_f64_type(),
+            vec![1],
+            vec![0u8; 8],
+            ChunkOptions::default(),
+            None,
+            vec![],
         ));
 
         let err = MetadataIndex::merge_blocks(&[b0, b1]).unwrap_err();
@@ -617,13 +630,23 @@ mod parallel_metadata_tests {
     fn finalize_parallel_rejects_duplicates() {
         let mut b0 = MetadataBlock::new(0);
         b0.add_dataset(build_dataset_metadata(
-            "same", make_f64_type(), vec![1], vec![0u8; 8],
-            ChunkOptions::default(), None, vec![],
+            "same",
+            make_f64_type(),
+            vec![1],
+            vec![0u8; 8],
+            ChunkOptions::default(),
+            None,
+            vec![],
         ));
         let mut b1 = MetadataBlock::new(1);
         b1.add_dataset(build_dataset_metadata(
-            "same", make_f64_type(), vec![1], vec![0u8; 8],
-            ChunkOptions::default(), None, vec![],
+            "same",
+            make_f64_type(),
+            vec![1],
+            vec![0u8; 8],
+            ChunkOptions::default(),
+            None,
+            vec![],
         ));
         let err = finalize_parallel(vec![b0, b1]).unwrap_err();
         assert!(matches!(err, FormatError::DuplicateDatasetName(_)));
@@ -634,12 +657,19 @@ mod parallel_metadata_tests {
     fn independent_builder_basic() {
         let mut builder = IndependentDatasetBuilder::new(42);
         builder.add_dataset(build_dataset_metadata(
-            "ds1", make_f64_type(), vec![3],
-            1.0f64.to_le_bytes().iter()
+            "ds1",
+            make_f64_type(),
+            vec![3],
+            1.0f64
+                .to_le_bytes()
+                .iter()
                 .chain(2.0f64.to_le_bytes().iter())
                 .chain(3.0f64.to_le_bytes().iter())
-                .copied().collect(),
-            ChunkOptions::default(), None, vec![],
+                .copied()
+                .collect(),
+            ChunkOptions::default(),
+            None,
+            vec![],
         ));
         let block = builder.finish();
         assert_eq!(block.creator_id, 42);
@@ -647,7 +677,10 @@ mod parallel_metadata_tests {
 
         let bytes = finalize_parallel(vec![block]).unwrap();
         let file = File::from_bytes(bytes).unwrap();
-        assert_eq!(file.dataset("ds1").unwrap().read_f64().unwrap(), vec![1.0, 2.0, 3.0]);
+        assert_eq!(
+            file.dataset("ds1").unwrap().read_f64().unwrap(),
+            vec![1.0, 2.0, 3.0]
+        );
     }
 
     // Test 32: Benchmark-style test — parallel vs sequential creation of N datasets
@@ -659,7 +692,8 @@ mod parallel_metadata_tests {
         // Sequential
         let mut fb = rustyhdf5::FileBuilder::new();
         for i in 0..n {
-            fb.create_dataset(&format!("ds_{i:03}")).with_f64_data(&data);
+            fb.create_dataset(&format!("ds_{i:03}"))
+                .with_f64_data(&data);
         }
         let seq_bytes = fb.finish().unwrap();
 
@@ -696,7 +730,10 @@ mod parallel_metadata_tests {
         let specs = vec![DatasetSpec::f64("only", &[42.0])];
         let bytes = create_datasets_parallel(specs).unwrap();
         let file = File::from_bytes(bytes).unwrap();
-        assert_eq!(file.dataset("only").unwrap().read_f64().unwrap(), vec![42.0]);
+        assert_eq!(
+            file.dataset("only").unwrap().read_f64().unwrap(),
+            vec![42.0]
+        );
     }
 
     // Test 35: Datasets with attributes in parallel
@@ -716,8 +753,12 @@ mod parallel_metadata_tests {
         for i in 0..10 {
             let ds = file.dataset(&format!("ds_{i}")).unwrap();
             let attrs = ds.attrs().unwrap();
-            assert!(matches!(attrs.get("name"), Some(AttrValue::String(s)) if s == &format!("dataset {i}")));
-            assert!(matches!(attrs.get("value"), Some(AttrValue::F64(v)) if (*v - i as f64 * 0.5).abs() < 1e-10));
+            assert!(
+                matches!(attrs.get("name"), Some(AttrValue::String(s)) if s == &format!("dataset {i}"))
+            );
+            assert!(
+                matches!(attrs.get("value"), Some(AttrValue::F64(v)) if (*v - i as f64 * 0.5).abs() < 1e-10)
+            );
         }
     }
 }

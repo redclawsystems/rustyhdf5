@@ -84,11 +84,7 @@ pub unsafe fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 
     let denom = (norm_a * norm_b).sqrt();
-    if denom == 0.0 {
-        0.0
-    } else {
-        dot / denom
-    }
+    if denom == 0.0 { 0.0 } else { dot / denom }
 }
 
 /// NEON L2 distance.
@@ -131,14 +127,11 @@ pub fn f16_to_f32_batch(input: &[u16], output: &mut [f32]) {
     crate::scalar::f16_to_f32_batch(input, output);
 }
 
-/// NEON fletcher32 checksum with wider accumulators.
+/// Fletcher32 checksum (scalar implementation, no NEON intrinsics used).
 ///
-/// # Safety
-/// Caller must ensure aarch64 target.
-#[target_feature(enable = "neon")]
-pub unsafe fn checksum_fletcher32(data: &[u8]) -> u32 {
-    // For fletcher32, we process 16-bit words. Use NEON to accelerate the
-    // inner loop by processing multiple words at once, reducing modulo operations.
+/// This function uses no NEON intrinsics despite living in the neon module.
+/// It is safe to call without feature detection.
+pub fn checksum_fletcher32(data: &[u8]) -> u32 {
     let mut sum1: u32 = 0xFFFF;
     let mut sum2: u32 = 0xFFFF;
 

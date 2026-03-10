@@ -44,9 +44,9 @@ pub struct Superblock {
 /// Read an unsigned integer of `size` bytes (LE) from `data` at `pos`.
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -161,7 +161,12 @@ impl Superblock {
     ///
     /// The signature must be present at the given offset.
     pub fn parse(data: &[u8], signature_offset: usize) -> Result<Superblock, FormatError> {
-        let d = &data[signature_offset..];
+        let d = data
+            .get(signature_offset..)
+            .ok_or(FormatError::UnexpectedEof {
+                expected: signature_offset + 1,
+                available: data.len(),
+            })?;
         ensure_len(d, 9)?; // signature(8) + version(1)
 
         // Verify signature

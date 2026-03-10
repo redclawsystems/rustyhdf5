@@ -1,16 +1,16 @@
-use criterion::{criterion_group, criterion_main, Criterion};
-use rustyhdf5_format::file_writer::{AttrValue, CompoundTypeBuilder, FileWriter};
-use rustyhdf5_format::signature::find_signature;
-use rustyhdf5_format::superblock::Superblock;
-use rustyhdf5_format::object_header::ObjectHeader;
-use rustyhdf5_format::group_v2::resolve_path_any;
-use rustyhdf5_format::message_type::MessageType;
-use rustyhdf5_format::dataspace::Dataspace;
-use rustyhdf5_format::datatype::Datatype;
+use criterion::{Criterion, criterion_group, criterion_main};
+use rustyhdf5_format::chunked_read::read_chunked_data;
 use rustyhdf5_format::data_layout::DataLayout;
 use rustyhdf5_format::data_read::{read_as_f64, read_raw_data};
+use rustyhdf5_format::dataspace::Dataspace;
+use rustyhdf5_format::datatype::Datatype;
+use rustyhdf5_format::file_writer::{AttrValue, CompoundTypeBuilder, FileWriter};
 use rustyhdf5_format::filter_pipeline::FilterPipeline;
-use rustyhdf5_format::chunked_read::read_chunked_data;
+use rustyhdf5_format::group_v2::resolve_path_any;
+use rustyhdf5_format::message_type::MessageType;
+use rustyhdf5_format::object_header::ObjectHeader;
+use rustyhdf5_format::signature::find_signature;
+use rustyhdf5_format::superblock::Superblock;
 
 const N: usize = 1_000_000;
 
@@ -23,21 +23,45 @@ fn read_dataset_f64(bytes: &[u8], path: &str) -> Vec<f64> {
     let sb = Superblock::parse(bytes, sig).unwrap();
     let addr = resolve_path_any(bytes, &sb, path).unwrap();
     let hdr = ObjectHeader::parse(bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-    let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-    let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-    let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+    let dt_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Datatype)
+        .unwrap()
+        .data;
+    let ds_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::Dataspace)
+        .unwrap()
+        .data;
+    let dl_data = &hdr
+        .messages
+        .iter()
+        .find(|m| m.msg_type == MessageType::DataLayout)
+        .unwrap()
+        .data;
     let (dt, _) = Datatype::parse(dt_data).unwrap();
     let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
     let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
 
     match &dl {
         DataLayout::Chunked { .. } => {
-            let pipeline = hdr.messages.iter()
+            let pipeline = hdr
+                .messages
+                .iter()
                 .find(|m| m.msg_type == MessageType::FilterPipeline)
                 .map(|m| FilterPipeline::parse(&m.data).unwrap());
             let raw = read_chunked_data(
-                bytes, &dl, &ds, &dt, pipeline.as_ref(), sb.offset_size, sb.length_size,
-            ).unwrap();
+                bytes,
+                &dl,
+                &ds,
+                &dt,
+                pipeline.as_ref(),
+                sb.offset_size,
+                sb.length_size,
+            )
+            .unwrap();
             read_as_f64(&raw, &dt).unwrap()
         }
         _ => {
@@ -206,8 +230,15 @@ fn bench_read_dense_attrs(c: &mut Criterion) {
             let sig = find_signature(&bytes).unwrap();
             let sb = Superblock::parse(&bytes, sig).unwrap();
             let addr = resolve_path_any(&bytes, &sb, "data").unwrap();
-            let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-            rustyhdf5_format::attribute::extract_attributes_full(&bytes, &hdr, sb.offset_size, sb.length_size).unwrap()
+            let hdr =
+                ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
+            rustyhdf5_format::attribute::extract_attributes_full(
+                &bytes,
+                &hdr,
+                sb.offset_size,
+                sb.length_size,
+            )
+            .unwrap()
         })
     });
 }
@@ -244,8 +275,15 @@ fn bench_read_50_attrs(c: &mut Criterion) {
             let sig = find_signature(&bytes).unwrap();
             let sb = Superblock::parse(&bytes, sig).unwrap();
             let addr = resolve_path_any(&bytes, &sb, "data").unwrap();
-            let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-            rustyhdf5_format::attribute::extract_attributes_full(&bytes, &hdr, sb.offset_size, sb.length_size).unwrap()
+            let hdr =
+                ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
+            rustyhdf5_format::attribute::extract_attributes_full(
+                &bytes,
+                &hdr,
+                sb.offset_size,
+                sb.length_size,
+            )
+            .unwrap()
         })
     });
 }
@@ -344,8 +382,15 @@ fn bench_read_string_attrs(c: &mut Criterion) {
             let sig = find_signature(&bytes).unwrap();
             let sb = Superblock::parse(&bytes, sig).unwrap();
             let addr = resolve_path_any(&bytes, &sb, "data").unwrap();
-            let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-            rustyhdf5_format::attribute::extract_attributes_full(&bytes, &hdr, sb.offset_size, sb.length_size).unwrap()
+            let hdr =
+                ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
+            rustyhdf5_format::attribute::extract_attributes_full(
+                &bytes,
+                &hdr,
+                sb.offset_size,
+                sb.length_size,
+            )
+            .unwrap()
         })
     });
 }
@@ -413,10 +458,26 @@ fn bench_read_compound_10k(c: &mut Criterion) {
             let sig = find_signature(&bytes).unwrap();
             let sb = Superblock::parse(&bytes, sig).unwrap();
             let addr = resolve_path_any(&bytes, &sb, "table").unwrap();
-            let hdr = ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
-            let dt_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Datatype).unwrap().data;
-            let ds_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::Dataspace).unwrap().data;
-            let dl_data = &hdr.messages.iter().find(|m| m.msg_type == MessageType::DataLayout).unwrap().data;
+            let hdr =
+                ObjectHeader::parse(&bytes, addr as usize, sb.offset_size, sb.length_size).unwrap();
+            let dt_data = &hdr
+                .messages
+                .iter()
+                .find(|m| m.msg_type == MessageType::Datatype)
+                .unwrap()
+                .data;
+            let ds_data = &hdr
+                .messages
+                .iter()
+                .find(|m| m.msg_type == MessageType::Dataspace)
+                .unwrap()
+                .data;
+            let dl_data = &hdr
+                .messages
+                .iter()
+                .find(|m| m.msg_type == MessageType::DataLayout)
+                .unwrap()
+                .data;
             let (dt, _) = Datatype::parse(dt_data).unwrap();
             let ds = Dataspace::parse(ds_data, sb.length_size).unwrap();
             let dl = DataLayout::parse(dl_data, sb.offset_size, sb.length_size).unwrap();
@@ -487,8 +548,12 @@ fn bench_write_multi_type(c: &mut Criterion) {
     c.bench_function("write_1M_mixed_types", |b| {
         b.iter(|| {
             let mut fw = FileWriter::new();
-            fw.create_dataset("f32").with_f32_data(&f32_data).with_shape(&[N as u64]);
-            fw.create_dataset("i32").with_i32_data(&i32_data).with_shape(&[N as u64]);
+            fw.create_dataset("f32")
+                .with_f32_data(&f32_data)
+                .with_shape(&[N as u64]);
+            fw.create_dataset("i32")
+                .with_i32_data(&i32_data)
+                .with_shape(&[N as u64]);
             fw.finish().unwrap()
         })
     });

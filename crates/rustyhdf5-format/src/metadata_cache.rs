@@ -4,15 +4,11 @@
 //! structures on repeated accesses. It uses a HashMap keyed by file offset
 //! with LRU eviction controlled by a byte budget.
 
-#[cfg(not(feature = "std"))]
-use alloc::{vec, vec::Vec};
-
+#[cfg(feature = "std")]
 use core::fmt;
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
 
 /// Default metadata cache size: 2 MiB.
 pub const DEFAULT_METADATA_CACHE_BYTES: usize = 2 * 1024 * 1024;
@@ -21,6 +17,7 @@ pub const DEFAULT_METADATA_CACHE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_METADATA_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 /// A cached metadata entry (opaque bytes representing a parsed structure).
+#[cfg(feature = "std")]
 struct CacheEntry {
     /// Cached data (serialized or parsed form).
     data: Vec<u8>,
@@ -34,15 +31,16 @@ struct CacheEntry {
 ///
 /// Caches parsed object headers and B-tree nodes keyed by file offset.
 /// Thread-safe via internal `Mutex`.
+///
+/// Only available with the `std` feature because it requires `std::sync::Mutex`.
+#[cfg(feature = "std")]
 pub struct MetadataCache {
     inner: std::sync::Mutex<CacheInner>,
 }
 
+#[cfg(feature = "std")]
 struct CacheInner {
-    #[cfg(feature = "std")]
     entries: HashMap<u64, CacheEntry>,
-    #[cfg(not(feature = "std"))]
-    entries: BTreeMap<u64, CacheEntry>,
     current_bytes: usize,
     max_bytes: usize,
     tick: u64,
@@ -50,6 +48,7 @@ struct CacheInner {
     misses: u64,
 }
 
+#[cfg(feature = "std")]
 impl MetadataCache {
     /// Create a new metadata cache with the default size (2 MiB).
     pub fn new() -> Self {
@@ -63,10 +62,7 @@ impl MetadataCache {
         let max_bytes = max_bytes.min(MAX_METADATA_CACHE_BYTES);
         Self {
             inner: std::sync::Mutex::new(CacheInner {
-                #[cfg(feature = "std")]
                 entries: HashMap::new(),
-                #[cfg(not(feature = "std"))]
-                entries: BTreeMap::new(),
                 current_bytes: 0,
                 max_bytes,
                 tick: 0,
@@ -80,7 +76,7 @@ impl MetadataCache {
     ///
     /// Returns a clone of the cached bytes, or `None` if not present.
     pub fn get(&self, offset: u64) -> Option<Vec<u8>> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.tick += 1;
         let tick = inner.tick;
         let result = if let Some(entry) = inner.entries.get_mut(&offset) {
@@ -102,7 +98,7 @@ impl MetadataCache {
     /// If the entry already exists, it is updated. LRU eviction occurs
     /// if the cache exceeds its byte budget.
     pub fn put(&self, offset: u64, data: Vec<u8>) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let approx_size = data.len() + 64; // overhead estimate
 
         // Don't cache if single entry exceeds budget
@@ -144,7 +140,7 @@ impl MetadataCache {
 
     /// Clear all cached entries.
     pub fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.entries.clear();
         inner.current_bytes = 0;
         inner.tick = 0;
@@ -152,32 +148,43 @@ impl MetadataCache {
 
     /// Number of cached entries.
     pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().entries.len()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .len()
     }
 
     /// Whether the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.inner.lock().unwrap().entries.is_empty()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .is_empty()
     }
 
     /// Current bytes used by cached entries.
     pub fn current_bytes(&self) -> usize {
-        self.inner.lock().unwrap().current_bytes
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .current_bytes
     }
 
     /// Cache hit count.
     pub fn hits(&self) -> u64 {
-        self.inner.lock().unwrap().hits
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).hits
     }
 
     /// Cache miss count.
     pub fn misses(&self) -> u64 {
-        self.inner.lock().unwrap().misses
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).misses
     }
 
     /// Hit rate as a fraction in [0.0, 1.0].
     pub fn hit_rate(&self) -> f64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let total = inner.hits + inner.misses;
         if total == 0 {
             0.0
@@ -187,15 +194,17 @@ impl MetadataCache {
     }
 }
 
+#[cfg(feature = "std")]
 impl Default for MetadataCache {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "std")]
 impl fmt::Debug for MetadataCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         f.debug_struct("MetadataCache")
             .field("entries", &inner.entries.len())
             .field("current_bytes", &inner.current_bytes)

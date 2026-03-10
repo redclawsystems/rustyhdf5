@@ -99,7 +99,18 @@ fn impl_h5type(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             }
 
             /// Deserializes from HDF5 compound raw bytes (little-endian).
+            ///
+            /// # Panics
+            ///
+            /// Panics if `_data` is shorter than the compound type size.
             pub fn from_bytes(_data: &[u8]) -> Self {
+                let _required = Self::_h5_compound_size();
+                assert!(
+                    _data.len() >= _required,
+                    "from_bytes: input length {} is less than compound size {}",
+                    _data.len(),
+                    _required,
+                );
                 let mut _pos = 0usize;
                 #(#deserialize_stmts)*
                 Self {
@@ -382,11 +393,7 @@ fn array_mapping(
             4usize,
             quote! { f32::from_le_bytes(_data[_pos.._pos + 4].try_into().unwrap()) },
         ),
-        "i8" => (
-            int_dt_quote(1, true),
-            1usize,
-            quote! { _data[_pos] as i8 },
-        ),
+        "i8" => (int_dt_quote(1, true), 1usize, quote! { _data[_pos] as i8 }),
         "i16" => (
             int_dt_quote(2, true),
             2usize,
@@ -402,11 +409,7 @@ fn array_mapping(
             8usize,
             quote! { i64::from_le_bytes(_data[_pos.._pos + 8].try_into().unwrap()) },
         ),
-        "u8" => (
-            int_dt_quote(1, false),
-            1usize,
-            quote! { _data[_pos] },
-        ),
+        "u8" => (int_dt_quote(1, false), 1usize, quote! { _data[_pos] }),
         "u16" => (
             int_dt_quote(2, false),
             2usize,

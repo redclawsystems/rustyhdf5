@@ -37,9 +37,9 @@ pub struct FractalHeapHeader {
 
 fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
     let s = size as usize;
-    if pos + s > data.len() {
+    if pos.checked_add(s).is_none_or(|end| end > data.len()) {
         return Err(FormatError::UnexpectedEof {
-            expected: pos + s,
+            expected: pos.saturating_add(s),
             available: data.len(),
         });
     }
@@ -47,8 +47,14 @@ fn read_offset(data: &[u8], pos: usize, size: u8) -> Result<u64, FormatError> {
         2 => u16::from_le_bytes([data[pos], data[pos + 1]]) as u64,
         4 => u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as u64,
         8 => u64::from_le_bytes([
-            data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-            data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
         ]),
         _ => return Err(FormatError::InvalidOffsetSize(size)),
     })
@@ -109,7 +115,10 @@ impl FractalHeapHeader {
 
         ensure_len(file_data, pos, 4)?;
         let max_managed_object_size = u32::from_le_bytes([
-            file_data[pos], file_data[pos + 1], file_data[pos + 2], file_data[pos + 3],
+            file_data[pos],
+            file_data[pos + 1],
+            file_data[pos + 2],
+            file_data[pos + 3],
         ]);
         pos += 4;
 
@@ -317,8 +326,19 @@ impl FractalHeapHeader {
         length: usize,
         _offset_size: u8,
     ) -> Result<Vec<u8>, FormatError> {
+        if target_offset < block_heap_offset {
+            return Err(FormatError::UnexpectedEof {
+                expected: block_heap_offset as usize,
+                available: target_offset as usize,
+            });
+        }
         let local_offset = (target_offset - block_heap_offset) as usize;
-        let pos = block_addr + local_offset;
+        let pos = block_addr
+            .checked_add(local_offset)
+            .ok_or(FormatError::UnexpectedEof {
+                expected: usize::MAX,
+                available: file_data.len(),
+            })?;
         ensure_len(file_data, pos, length)?;
         Ok(file_data[pos..pos + length].to_vec())
     }
@@ -353,7 +373,7 @@ impl FractalHeapHeader {
 
         // Compute block sizes for each row using the doubling table
         let tw = self.table_width as u64;
-        
+
         let nrows_usize = nrows as usize;
 
         // Build table of (block_size, heap_offset) for each child entry
@@ -398,7 +418,7 @@ impl FractalHeapHeader {
 
         // If we have indirect block rows
         for row in start_indirect..nrows_usize {
-            let block_size = self.block_size_for_row(row);
+            let _block_size = self.block_size_for_row(row);
             let child_nrows = row - start_indirect + 1;
 
             for _col in 0..tw {
@@ -427,7 +447,6 @@ impl FractalHeapHeader {
                     current_heap_offset += total_child_space;
                 }
             }
-            let _ = block_size;
         }
 
         Err(FormatError::UnexpectedEof {
@@ -496,12 +515,16 @@ mod tests {
         // next_huge_object_id (length_size)
         pos += ls;
         // btree_huge_objects_address (offset_size) - undefined
-        for i in 0..os { buf[pos + i] = 0xFF; }
+        for i in 0..os {
+            buf[pos + i] = 0xFF;
+        }
         pos += os;
         // free_space_managed_blocks (length_size)
         pos += ls;
         // managed_block_free_space_manager_address (offset_size) - undefined
-        for i in 0..os { buf[pos + i] = 0xFF; }
+        for i in 0..os {
+            buf[pos + i] = 0xFF;
+        }
         pos += os;
         // managed_space_in_heap (length_size)
         pos += ls;

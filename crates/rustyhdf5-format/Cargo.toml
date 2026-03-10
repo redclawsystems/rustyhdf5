@@ -39,6 +39,7 @@ fast-deflate = ["flate2/zlib-ng"]
 system-zlib = ["flate2/zlib-default"]
 system-zlib-decompress = []
 zlib-rs = ["flate2/zlib-rs"]
+lz4 = ["lz4_flex"]
 
 [[bench]]
 name = "parallel_decompress_bench"

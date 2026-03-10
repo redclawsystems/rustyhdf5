@@ -48,10 +48,7 @@ mod apple {
             algorithm: c_int,
         ) -> c_int;
 
-        fn compression_stream_process(
-            stream: *mut CompressionStream,
-            flags: c_int,
-        ) -> c_int;
+        fn compression_stream_process(stream: *mut CompressionStream, flags: c_int) -> c_int;
 
         fn compression_stream_destroy(stream: *mut CompressionStream) -> c_int;
     }
@@ -82,17 +79,18 @@ mod apple {
 
         let raw_deflate = &data[header_size..data.len() - 4];
 
-        let capacity = if output_hint > 0 { output_hint } else { data.len() * 4 };
+        let capacity = if output_hint > 0 {
+            output_hint
+        } else {
+            data.len() * 4
+        };
         let mut output = vec![0u8; capacity];
         let mut total_written = 0usize;
 
         unsafe {
             let mut stream = std::mem::zeroed::<CompressionStream>();
-            let status = compression_stream_init(
-                &mut stream,
-                COMPRESSION_STREAM_DECODE,
-                COMPRESSION_ZLIB,
-            );
+            let status =
+                compression_stream_init(&mut stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB);
             if status != COMPRESSION_STATUS_OK {
                 return Err("apple compression: failed to init decode stream".into());
             }
@@ -153,11 +151,8 @@ mod apple {
 
         unsafe {
             let mut stream = std::mem::zeroed::<CompressionStream>();
-            let status = compression_stream_init(
-                &mut stream,
-                COMPRESSION_STREAM_ENCODE,
-                COMPRESSION_ZLIB,
-            );
+            let status =
+                compression_stream_init(&mut stream, COMPRESSION_STREAM_ENCODE, COMPRESSION_ZLIB);
             if status != COMPRESSION_STATUS_OK {
                 return Err("apple compression: failed to init encode stream".into());
             }
@@ -274,15 +269,16 @@ pub(crate) fn flate2_decompress_streaming(data: &[u8]) -> Result<Vec<u8>, String
     use std::io::Read;
     let mut decoder = flate2::read::ZlibDecoder::new(data);
     let mut result = Vec::new();
-    decoder.read_to_end(&mut result).map_err(|e| e.to_string())?;
+    decoder
+        .read_to_end(&mut result)
+        .map_err(|e| e.to_string())?;
     Ok(result)
 }
 
 /// Compress data using flate2 (zlib-ng when fast-deflate enabled, else miniz_oxide).
 pub(crate) fn flate2_compress(data: &[u8], level: u32) -> Result<Vec<u8>, String> {
     use std::io::Write;
-    let mut encoder =
-        flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(level));
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(level));
     encoder.write_all(data).map_err(|e| e.to_string())?;
     encoder.finish().map_err(|e| e.to_string())
 }
@@ -304,7 +300,15 @@ pub fn decompress(data: &[u8], output_hint: usize) -> Result<Vec<u8>, String> {
     {
         match apple::decompress(data, output_hint) {
             Ok(result) => return Ok(result),
-            Err(_) => {} // Fall through to flate2
+            Err(_e) => {
+                // Apple Compression failed (e.g. malformed zlib header or
+                // unsupported stream). Fall through to the portable flate2
+                // backend which handles more edge cases.
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "rustyhdf5: Apple Compression decompress failed ({_e}), falling back to flate2"
+                );
+            }
         }
     }
 
@@ -325,7 +329,14 @@ pub fn compress(data: &[u8], level: u32) -> Result<Vec<u8>, String> {
     {
         match apple::compress(data, level) {
             Ok(result) => return Ok(result),
-            Err(_) => {} // Fall through to flate2
+            Err(_e) => {
+                // Apple Compression failed. Fall through to the portable
+                // flate2 backend.
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "rustyhdf5: Apple Compression compress failed ({_e}), falling back to flate2"
+                );
+            }
         }
     }
 
@@ -336,11 +347,14 @@ pub fn compress(data: &[u8], level: u32) -> Result<Vec<u8>, String> {
 pub fn active_backend() -> &'static str {
     #[cfg(all(target_os = "macos", feature = "apple-compression"))]
     {
-        return "apple-compression";
+        "apple-compression"
     }
-    #[cfg(all(not(all(target_os = "macos", feature = "apple-compression")), feature = "fast-deflate"))]
+    #[cfg(all(
+        not(all(target_os = "macos", feature = "apple-compression")),
+        feature = "fast-deflate"
+    ))]
     {
-        return "zlib-ng";
+        "zlib-ng"
     }
     #[cfg(not(any(
         all(target_os = "macos", feature = "apple-compression"),

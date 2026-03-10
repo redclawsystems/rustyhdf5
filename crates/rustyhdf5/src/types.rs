@@ -184,7 +184,10 @@ fn decode_attr_value(
             if vals.len() == 1 {
                 Some(AttrValue::U64(vals[0]))
             } else {
-                // No U64Array variant, store as I64Array
+                // No U64Array variant, store as I64Array.
+                // NOTE: This cast is lossy for values > i64::MAX (bit 63 set).
+                // Those values will appear as negative i64. A dedicated U64Array
+                // variant would be needed to handle the full u64 range.
                 let i64_vals: Vec<i64> = vals.iter().map(|&v| v as i64).collect();
                 Some(AttrValue::I64Array(i64_vals))
             }
@@ -200,7 +203,9 @@ fn decode_attr_value(
         Datatype::VariableLength {
             is_string: true, ..
         } => {
-            let strings = attr.read_vl_strings(file_data, offset_size, length_size).ok()?;
+            let strings = attr
+                .read_vl_strings(file_data, offset_size, length_size)
+                .ok()?;
             if strings.len() == 1 {
                 Some(AttrValue::String(strings[0].clone()))
             } else {

@@ -15,22 +15,17 @@ use crate::datatype::{
 /// Controls when fill values are written to dataset storage.
 ///
 /// Corresponds to the HDF5 fill value message's "fill time" field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FillTime {
     /// Never write fill values (0x02). Avoids initialization overhead
     /// for datasets that will be fully written before any read.
     Never,
     /// Write fill values at allocation time (0x0a). This is the default
     /// and matches the HDF5 C library's behavior.
+    #[default]
     Alloc,
     /// Write fill values only when the fill value has been explicitly set (0x06).
     IfSet,
-}
-
-impl Default for FillTime {
-    fn default() -> Self {
-        FillTime::Alloc
-    }
 }
 
 impl FillTime {

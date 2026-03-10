@@ -10,9 +10,7 @@ pub fn f16_to_f32_batch(input: &[u16], output: &mut [f32]) {
 
     match crate::detect_backend() {
         #[cfg(target_arch = "aarch64")]
-        Backend::Neon => {
-            crate::neon::f16_to_f32_batch(input, output)
-        }
+        Backend::Neon => crate::neon::f16_to_f32_batch(input, output),
 
         #[cfg(target_arch = "x86_64")]
         Backend::Avx2 | Backend::Avx512 => {

@@ -7,10 +7,8 @@ use pyo3::prelude::*;
 
 use crate::attrs::PyAttrs;
 use crate::dataset::PyDataset;
-use crate::group::{finalize_write_group, PyGroup, WriteGroupState};
-use crate::{
-    apply_dataset_spec, extract_numpy_data, to_py_err, DatasetSpec, OwnedAttrValue,
-};
+use crate::group::{PyGroup, WriteGroupState, finalize_write_group};
+use crate::{DatasetSpec, OwnedAttrValue, apply_dataset_spec, extract_numpy_data, to_py_err};
 
 /// Internal state for write mode.
 struct WriteState {
@@ -123,9 +121,9 @@ impl PyFile {
                         let grp = PyGroup::from_read(Arc::clone(file), key.to_string());
                         Ok(grp.into_pyobject(py)?.into_any().unbind())
                     }
-                    Err(e) => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(
-                        format!("{key}: {e}"),
-                    )),
+                    Err(e) => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "{key}: {e}"
+                    ))),
                 }
             }
         }
@@ -198,9 +196,7 @@ impl PyFile {
                 let map = file.root().attrs().map_err(to_py_err)?;
                 Ok(PyAttrs::from_read(map))
             }
-            Some(FileInner::Write(state)) => {
-                Ok(PyAttrs::from_write(Arc::clone(&state.root_attrs)))
-            }
+            Some(FileInner::Write(state)) => Ok(PyAttrs::from_write(Arc::clone(&state.root_attrs))),
             None => Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(
                 "file is closed",
             )),
@@ -269,7 +265,7 @@ fn finalize_write(state: WriteState) -> PyResult<()> {
     let mut builder = rustyhdf5_rs::FileBuilder::new();
 
     // Root attributes
-    let root_attrs = state.root_attrs.lock().unwrap();
+    let root_attrs = state.root_attrs.lock().unwrap_or_else(|e| e.into_inner());
     for (name, val) in root_attrs.iter() {
         builder.set_attr(name, val.clone().into());
     }
@@ -318,9 +314,7 @@ mod tests {
                 deflate_level: None,
                 attrs: vec![("unit".into(), OwnedAttrValue::Str("m".into()))],
             }],
-            root_attrs: Arc::new(Mutex::new(vec![
-                ("version".into(), OwnedAttrValue::I64(1)),
-            ])),
+            root_attrs: Arc::new(Mutex::new(vec![("version".into(), OwnedAttrValue::I64(1))])),
             groups: vec![Arc::new(Mutex::new(WriteGroupState {
                 name: "grp".into(),
                 datasets: vec![DatasetSpec {

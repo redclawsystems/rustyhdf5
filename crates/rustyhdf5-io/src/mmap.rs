@@ -25,8 +25,12 @@ impl MmapReader {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the underlying file is not modified
-    /// by another process while the mapping is active.
+    /// **The caller must ensure that the underlying file is not modified
+    /// externally (by another process, thread, or signal handler) while
+    /// the mapping is active.** If the file is truncated or written to
+    /// concurrently, reads through the mapping are undefined behavior
+    /// (SIGBUS on POSIX, access violation on Windows). For safe concurrent
+    /// access, use file locking or the buffered I/O backend instead.
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let file = fs::File::open(path)?;
         // SAFETY: We are creating a read-only mapping. The caller is
@@ -100,8 +104,13 @@ impl MmapReadWrite {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the underlying file is not modified
-    /// by another process while the mapping is active.
+    /// **The caller must ensure that the underlying file is not modified
+    /// externally (by another process, thread, or signal handler) while
+    /// the mapping is active.** If the file is truncated or written to
+    /// concurrently, reads and writes through the mapping are undefined
+    /// behavior (SIGBUS on POSIX, access violation on Windows). For safe
+    /// concurrent access, use file locking or the buffered I/O backend
+    /// instead.
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let file = fs::OpenOptions::new().read(true).write(true).open(path)?;
         // SAFETY: We create a read-write mapping. Caller ensures no concurrent
