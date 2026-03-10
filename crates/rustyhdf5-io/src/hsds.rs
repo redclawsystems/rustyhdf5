@@ -223,10 +223,7 @@ impl HsdsClient {
         domain: &str,
         dataset_id: &str,
     ) -> Result<DatasetInfoHsds, HsdsError> {
-        let url = format!(
-            "{}/datasets/{}?host={}",
-            self.base_url, dataset_id, domain
-        );
+        let url = format!("{}/datasets/{}?host={}", self.base_url, dataset_id, domain);
         let resp = self.client.get(&url).send().await?;
         check_status(&resp)?;
         let body: DatasetInfoHsds = resp.json().await?;

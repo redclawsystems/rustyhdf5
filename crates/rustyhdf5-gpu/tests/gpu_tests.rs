@@ -29,11 +29,7 @@ mod tests {
                     .sum::<f32>()
                     .sqrt();
                 let denom = q_norm * v_norm;
-                if denom > 0.0 {
-                    dot / denom
-                } else {
-                    0.0
-                }
+                if denom > 0.0 { dot / denom } else { 0.0 }
             })
             .collect()
     }
@@ -136,8 +132,7 @@ mod tests {
         let query: Vec<f32> = (0..dim).map(|d| (d as f32 * 0.1).cos()).collect();
 
         let cpu_scores = cpu_cosine(&query, &vectors, dim);
-        let mut cpu_ranked: Vec<(usize, f32)> =
-            cpu_scores.iter().copied().enumerate().collect();
+        let mut cpu_ranked: Vec<(usize, f32)> = cpu_scores.iter().copied().enumerate().collect();
         cpu_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         cpu_ranked.truncate(10);
 
@@ -211,8 +206,7 @@ mod tests {
         let query: Vec<f32> = (0..dim).map(|d| (d as f32 * 0.1).cos()).collect();
 
         let cpu_dists = cpu_l2(&query, &vectors, dim);
-        let mut cpu_ranked: Vec<(usize, f32)> =
-            cpu_dists.iter().copied().enumerate().collect();
+        let mut cpu_ranked: Vec<(usize, f32)> = cpu_dists.iter().copied().enumerate().collect();
         cpu_ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         cpu_ranked.truncate(10);
 

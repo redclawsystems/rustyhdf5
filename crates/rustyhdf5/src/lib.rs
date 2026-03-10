@@ -40,7 +40,7 @@ pub use reader::{Dataset, File, Group};
 pub use types::{AttrValue, DType};
 pub use writer::FileBuilder;
 #[cfg(feature = "parallel")]
-pub use writer::{create_datasets_parallel, DatasetSpec};
+pub use writer::{DatasetSpec, create_datasets_parallel};
 
 // Re-export useful types from rustyhdf5-format for advanced users
 pub use rustyhdf5_format::data_layout::VdsMapping;
@@ -401,20 +401,21 @@ mod tests {
         b.set_attr("f64_val", AttrValue::F64(2.78));
         b.set_attr("i64_val", AttrValue::I64(-42));
         b.set_attr("str_val", AttrValue::String("hello".into()));
-        b.set_attr(
-            "f64_arr",
-            AttrValue::F64Array(vec![1.0, 2.0, 3.0]),
-        );
+        b.set_attr("f64_arr", AttrValue::F64Array(vec![1.0, 2.0, 3.0]));
         b.create_dataset("d").with_f64_data(&[0.0]);
         let bytes = b.finish().unwrap();
 
         let file = File::from_bytes(bytes).unwrap();
         let attrs = file.root().attrs().unwrap();
 
-        assert!(matches!(attrs.get("f64_val"), Some(AttrValue::F64(v)) if (*v - 2.78).abs() < 1e-10));
+        assert!(
+            matches!(attrs.get("f64_val"), Some(AttrValue::F64(v)) if (*v - 2.78).abs() < 1e-10)
+        );
         assert!(matches!(attrs.get("i64_val"), Some(AttrValue::I64(-42))));
         assert!(matches!(attrs.get("str_val"), Some(AttrValue::String(s)) if s == "hello"));
-        assert!(matches!(attrs.get("f64_arr"), Some(AttrValue::F64Array(arr)) if arr == &[1.0, 2.0, 3.0]));
+        assert!(
+            matches!(attrs.get("f64_arr"), Some(AttrValue::F64Array(arr)) if arr == &[1.0, 2.0, 3.0])
+        );
     }
 
     #[test]
@@ -561,7 +562,7 @@ mod tests {
         match ds.read_as_slice::<f64>() {
             Ok(Some(slice)) => assert_eq!(slice, &original[..]),
             Ok(None) => {} // no raw ref available
-            Err(_) => {} // alignment may not be guaranteed in the file
+            Err(_) => {}   // alignment may not be guaranteed in the file
         }
 
         std::fs::remove_file(&path).ok();
@@ -619,11 +620,7 @@ mod tests {
         assert_eq!(DType::I32.to_string(), "i32");
         assert_eq!(DType::String.to_string(), "string");
         assert_eq!(
-            DType::Compound(vec![
-                ("x".into(), DType::F64),
-                ("y".into(), DType::F64),
-            ])
-            .to_string(),
+            DType::Compound(vec![("x".into(), DType::F64), ("y".into(), DType::F64),]).to_string(),
             "compound{x: f64, y: f64}"
         );
     }

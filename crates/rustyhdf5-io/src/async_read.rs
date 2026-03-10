@@ -296,16 +296,16 @@ impl AsyncHDF5File {
             self.superblock.length_size,
         )?;
 
-        let dt_msg = find_msg(&header, MessageType::Datatype)
-            .ok_or(FormatError::DatasetMissingData)?;
+        let dt_msg =
+            find_msg(&header, MessageType::Datatype).ok_or(FormatError::DatasetMissingData)?;
         let (datatype, _) = Datatype::parse(&dt_msg.data)?;
 
-        let ds_msg = find_msg(&header, MessageType::Dataspace)
-            .ok_or(FormatError::DatasetMissingShape)?;
+        let ds_msg =
+            find_msg(&header, MessageType::Dataspace).ok_or(FormatError::DatasetMissingShape)?;
         let dataspace = Dataspace::parse(&ds_msg.data, self.superblock.length_size)?;
 
-        let dl_msg = find_msg(&header, MessageType::DataLayout)
-            .ok_or(FormatError::DatasetMissingData)?;
+        let dl_msg =
+            find_msg(&header, MessageType::DataLayout).ok_or(FormatError::DatasetMissingData)?;
         let layout = DataLayout::parse(
             &dl_msg.data,
             self.superblock.offset_size,

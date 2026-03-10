@@ -207,7 +207,7 @@ pub mod hsds;
 pub mod mmap;
 
 #[cfg(feature = "mmap")]
-pub use mmap::{MmapReader, MmapReadWrite};
+pub use mmap::{MmapReadWrite, MmapReader};
 
 pub mod prefetch;
 pub mod subfiling;

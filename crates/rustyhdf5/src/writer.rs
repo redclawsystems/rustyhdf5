@@ -15,7 +15,7 @@ use rustyhdf5_format::datatype::Datatype;
 #[cfg(feature = "parallel")]
 use rustyhdf5_format::file_writer::IndependentDatasetBuilder;
 #[cfg(feature = "parallel")]
-use rustyhdf5_format::metadata_index::{build_dataset_metadata, MetadataBlock};
+use rustyhdf5_format::metadata_index::{MetadataBlock, build_dataset_metadata};
 
 /// Builder for creating a new HDF5 file.
 ///

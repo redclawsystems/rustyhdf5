@@ -7,9 +7,7 @@ use pyo3::types::PyList;
 
 use crate::attrs::PyAttrs;
 use crate::dataset::PyDataset;
-use crate::{
-    apply_dataset_spec, extract_numpy_data, to_py_err, DatasetSpec, OwnedAttrValue,
-};
+use crate::{DatasetSpec, OwnedAttrValue, apply_dataset_spec, extract_numpy_data, to_py_err};
 
 /// Shared state for a group being written.
 pub(crate) struct WriteGroupState {
@@ -81,13 +79,12 @@ impl PyGroup {
                         // Could be a group without a DataLayout message
                         match file.group(&full_path) {
                             Ok(_) => {
-                                let grp =
-                                    PyGroup::from_read(Arc::clone(file), full_path);
+                                let grp = PyGroup::from_read(Arc::clone(file), full_path);
                                 Ok(grp.into_pyobject(py)?.into_any().unbind())
                             }
-                            Err(_) => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(
-                                format!("{key}: {e}"),
-                            )),
+                            Err(_) => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                                "{key}: {e}"
+                            ))),
                         }
                     }
                 }
@@ -147,9 +144,9 @@ impl PyGroup {
                 let deflate_level = match compression {
                     Some("gzip") => Some(compression_opts.unwrap_or(4)),
                     Some(other) => {
-                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                            format!("unsupported compression: {other}; only 'gzip' is supported"),
-                        ));
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "unsupported compression: {other}; only 'gzip' is supported"
+                        )));
                     }
                     None => None,
                 };
@@ -281,9 +278,7 @@ mod tests {
                 deflate_level: None,
                 attrs: vec![],
             }],
-            attrs: Arc::new(Mutex::new(vec![
-                ("version".into(), OwnedAttrValue::I64(1)),
-            ])),
+            attrs: Arc::new(Mutex::new(vec![("version".into(), OwnedAttrValue::I64(1))])),
         };
         let mut builder = rustyhdf5_rs::FileBuilder::new();
         // Need a root dataset for a valid file

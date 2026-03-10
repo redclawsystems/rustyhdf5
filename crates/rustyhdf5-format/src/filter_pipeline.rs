@@ -102,7 +102,8 @@ impl FilterPipeline {
             ensure_len(data, pos, num_client_data * 4)?;
             let mut client_data = Vec::with_capacity(num_client_data);
             for _ in 0..num_client_data {
-                let val = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+                let val =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
                 client_data.push(val);
                 pos += 4;
             }
@@ -120,7 +121,10 @@ impl FilterPipeline {
             });
         }
 
-        Ok(FilterPipeline { version: 1, filters })
+        Ok(FilterPipeline {
+            version: 1,
+            filters,
+        })
     }
 
     fn parse_v2(data: &[u8], number_of_filters: usize) -> Result<FilterPipeline, FormatError> {
@@ -164,7 +168,8 @@ impl FilterPipeline {
             ensure_len(data, pos, num_client_data * 4)?;
             let mut client_data = Vec::with_capacity(num_client_data);
             for _ in 0..num_client_data {
-                let val = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+                let val =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
                 client_data.push(val);
                 pos += 4;
             }
@@ -179,7 +184,10 @@ impl FilterPipeline {
             });
         }
 
-        Ok(FilterPipeline { version: 2, filters })
+        Ok(FilterPipeline {
+            version: 2,
+            filters,
+        })
     }
 
     /// Serialize the filter pipeline to bytes.

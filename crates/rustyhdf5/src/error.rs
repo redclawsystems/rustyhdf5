@@ -53,7 +53,10 @@ impl fmt::Display for Error {
                 write!(f, "zero-copy read requires native-endian byte order")
             }
             Error::ZeroCopyTypeMismatch { expected, actual } => {
-                write!(f, "zero-copy type mismatch: expected {expected}, got {actual}")
+                write!(
+                    f,
+                    "zero-copy type mismatch: expected {expected}, got {actual}"
+                )
             }
             Error::ZeroCopyUnaligned { required, actual } => {
                 write!(

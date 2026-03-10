@@ -30,7 +30,7 @@ use rustyhdf5_format::symbol_table::SymbolTableMessage;
 use rustyhdf5_io::HDF5Read;
 
 use crate::error::Error;
-use crate::types::{attrs_to_map, classify_datatype, AttrValue, DType};
+use crate::types::{AttrValue, DType, attrs_to_map, classify_datatype};
 
 /// A lazy HDF5 file handle that parses metadata on demand.
 ///
@@ -171,9 +171,7 @@ impl<R: HDF5Read> LazyFile<R> {
             self.superblock.length_size,
         )?;
 
-        self.header_cache
-            .borrow_mut()
-            .insert(address, hdr.clone());
+        self.header_cache.borrow_mut().insert(address, hdr.clone());
         Ok(hdr)
     }
 
@@ -237,12 +235,8 @@ impl<'f, R: HDF5Read> LazyGroup<'f, R> {
     pub fn attrs(&self) -> Result<HashMap<String, AttrValue>, Error> {
         let hdr = self.file.get_or_parse_header(self.address)?;
         let data = self.file.reader.as_bytes();
-        let attr_msgs = extract_attributes_full(
-            data,
-            &hdr,
-            self.file.offset_size(),
-            self.file.length_size(),
-        )?;
+        let attr_msgs =
+            extract_attributes_full(data, &hdr, self.file.offset_size(), self.file.length_size())?;
         Ok(attrs_to_map(
             &attr_msgs,
             data,
@@ -357,12 +351,7 @@ impl<'f, R: HDF5Read> LazyDataset<'f, R> {
         let dl = self.data_layout()?;
         let ds = self.dataspace()?;
         let dt = self.datatype()?;
-        let slice = data_read::read_raw_data_zerocopy(
-            self.file.reader.as_bytes(),
-            &dl,
-            &ds,
-            &dt,
-        )?;
+        let slice = data_read::read_raw_data_zerocopy(self.file.reader.as_bytes(), &dl, &ds, &dt)?;
         Ok(slice)
     }
 

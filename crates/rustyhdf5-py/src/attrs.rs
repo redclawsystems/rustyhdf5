@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::{attr_value_to_py, py_to_attr_value, OwnedAttrValue};
+use crate::{OwnedAttrValue, attr_value_to_py, py_to_attr_value};
 
 /// Backing storage for attributes.
 enum AttrsInner {
@@ -115,9 +115,12 @@ impl PyAttrs {
     fn keys(&self, py: Python<'_>) -> PyResult<PyObject> {
         let names: Vec<String> = match &self.inner {
             AttrsInner::Read(map) => map.keys().cloned().collect(),
-            AttrsInner::Write(store) => {
-                store.lock().unwrap().iter().map(|(k, _)| k.clone()).collect()
-            }
+            AttrsInner::Write(store) => store
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, _)| k.clone())
+                .collect(),
         };
         let list = PyList::new(py, &names)?;
         Ok(list.into_any().unbind())

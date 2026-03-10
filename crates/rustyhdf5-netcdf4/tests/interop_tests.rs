@@ -52,9 +52,7 @@ fn run_python(script: &str) {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        panic!(
-            "Python script failed:\nSTDOUT: {stdout}\nSTDERR: {stderr}"
-        );
+        panic!("Python script failed:\nSTDOUT: {stdout}\nSTDERR: {stderr}");
     }
 }
 
@@ -159,9 +157,7 @@ ds.close()
 
     // Check global attributes
     let global_attrs = file.global_attrs().unwrap();
-    assert!(
-        matches!(global_attrs.get("Conventions"), Some(AttrValue::String(s)) if s == "CF-1.8")
-    );
+    assert!(matches!(global_attrs.get("Conventions"), Some(AttrValue::String(s)) if s == "CF-1.8"));
     assert!(
         matches!(global_attrs.get("title"), Some(AttrValue::String(s)) if s == "Test CF Dataset")
     );
@@ -249,9 +245,7 @@ ds.to_netcdf("{path_str}", engine="netcdf4")
 
     // Check global attributes
     let global_attrs = file.global_attrs().unwrap();
-    assert!(
-        matches!(global_attrs.get("Conventions"), Some(AttrValue::String(s)) if s == "CF-1.8")
-    );
+    assert!(matches!(global_attrs.get("Conventions"), Some(AttrValue::String(s)) if s == "CF-1.8"));
 }
 
 // ===========================================================================

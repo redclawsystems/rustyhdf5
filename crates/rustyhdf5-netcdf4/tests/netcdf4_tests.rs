@@ -20,10 +20,7 @@ fn make_simple_netcdf4() -> Vec<u8> {
         "_NCProperties",
         AttrValue::String("version=2,rustyhdf5=0.1.0".into()),
     );
-    b.set_attr(
-        "Conventions",
-        AttrValue::String("CF-1.8".into()),
-    );
+    b.set_attr("Conventions", AttrValue::String("CF-1.8".into()));
     b.set_attr(
         "history",
         AttrValue::String("created by rustyhdf5-netcdf4 test".into()),
@@ -54,9 +51,7 @@ fn make_simple_netcdf4() -> Vec<u8> {
     // Variable: temperature (3x4)
     b.create_dataset("temperature")
         .with_f64_data(&[
-            20.0, 22.0, 25.0, 23.0,
-            28.0, 30.0, 29.0, 27.0,
-            15.0, 18.0, 20.0, 17.0,
+            20.0, 22.0, 25.0, 23.0, 28.0, 30.0, 29.0, 27.0, 15.0, 18.0, 20.0, 17.0,
         ])
         .with_shape(&[3, 4])
         .set_attr("units", AttrValue::String("K".into()))
@@ -128,10 +123,7 @@ fn make_grouped_netcdf4() -> Vec<u8> {
         .create_dataset("pressure")
         .with_f64_data(&[1013.25, 1012.0, 1011.5])
         .set_attr("units", AttrValue::String("hPa".into()))
-        .set_attr(
-            "long_name",
-            AttrValue::String("Surface Pressure".into()),
-        );
+        .set_attr("long_name", AttrValue::String("Surface Pressure".into()));
     g_surface.set_attr("description", AttrValue::String("Surface variables".into()));
     let finished_surface = g_surface.finish();
     b.add_group(finished_surface);
@@ -201,15 +193,9 @@ fn make_cf_rich_netcdf4() -> Vec<u8> {
         .set_attr("CLASS", AttrValue::String("DIMENSION_SCALE".into()))
         .set_attr("_Netcdf4Dimid", AttrValue::I64(0))
         .set_attr("units", AttrValue::String("hPa".into()))
-        .set_attr(
-            "long_name",
-            AttrValue::String("Pressure Level".into()),
-        )
+        .set_attr("long_name", AttrValue::String("Pressure Level".into()))
         .set_attr("axis", AttrValue::String("Z".into()))
-        .set_attr(
-            "valid_range",
-            AttrValue::F64Array(vec![0.0, 1100.0]),
-        );
+        .set_attr("valid_range", AttrValue::F64Array(vec![0.0, 1100.0]));
 
     b.finish().unwrap()
 }
@@ -671,14 +657,8 @@ fn test_real_world_temperature_grid() {
         .with_f64_data(&temp_data)
         .with_shape(&[2, 3, 4])
         .set_attr("units", AttrValue::String("K".into()))
-        .set_attr(
-            "long_name",
-            AttrValue::String("2 metre temperature".into()),
-        )
-        .set_attr(
-            "standard_name",
-            AttrValue::String("air_temperature".into()),
-        )
+        .set_attr("long_name", AttrValue::String("2 metre temperature".into()))
+        .set_attr("standard_name", AttrValue::String("air_temperature".into()))
         .set_attr("scale_factor", AttrValue::F64(0.001))
         .set_attr("add_offset", AttrValue::F64(273.15))
         .set_attr("_FillValue", AttrValue::F64(-32767.0));

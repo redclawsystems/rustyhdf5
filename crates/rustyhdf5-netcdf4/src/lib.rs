@@ -112,11 +112,7 @@ impl NetCDF4File {
             .hdf5
             .group(name)
             .map_err(|_| Error::GroupNotFound(name.to_string()))?;
-        Ok(NetCDF4Group::new(
-            name.to_string(),
-            &self.hdf5,
-            hdf5_group,
-        ))
+        Ok(NetCDF4Group::new(name.to_string(), &self.hdf5, hdf5_group))
     }
 
     /// Access the underlying HDF5 file for advanced operations.

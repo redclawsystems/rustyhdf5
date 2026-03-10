@@ -36,9 +36,7 @@ fn run_python(script: &str) {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        panic!(
-            "Python script failed:\nSTDOUT: {stdout}\nSTDERR: {stderr}"
-        );
+        panic!("Python script failed:\nSTDOUT: {stdout}\nSTDERR: {stderr}");
     }
 }
 
@@ -382,9 +380,7 @@ with h5py.File("{path_str}", "w") as f:
 
     // Root attrs
     let root_attrs = file.root().attrs().unwrap();
-    assert!(
-        matches!(root_attrs.get("file_attr"), Some(AttrValue::String(s)) if s == "root_value")
-    );
+    assert!(matches!(root_attrs.get("file_attr"), Some(AttrValue::String(s)) if s == "root_value"));
 
     // Level1 group
     let g1 = file.group("level1").unwrap();

@@ -25,7 +25,7 @@ use rustyhdf5_format::symbol_table::SymbolTableMessage;
 use rustyhdf5_io::MmapReader;
 
 use crate::error::Error;
-use crate::types::{attrs_to_map, classify_datatype, AttrValue, DType};
+use crate::types::{AttrValue, DType, attrs_to_map, classify_datatype};
 
 /// An HDF5 file opened via memory mapping.
 ///
@@ -63,14 +63,20 @@ impl MmapFile {
         if !has_message(&hdr, MessageType::DataLayout) {
             return Err(Error::NotADataset(path.to_string()));
         }
-        Ok(MmapDataset { file: self, header: hdr })
+        Ok(MmapDataset {
+            file: self,
+            header: hdr,
+        })
     }
 
     /// Resolve a path and return a `MmapGroup` handle.
     pub fn group(&self, path: &str) -> Result<MmapGroup<'_>, Error> {
         let data = self.reader.as_bytes();
         let addr = group_v2::resolve_path_any(data, &self.superblock, path)?;
-        Ok(MmapGroup { file: self, address: addr })
+        Ok(MmapGroup {
+            file: self,
+            address: addr,
+        })
     }
 
     /// Returns the raw file bytes (zero-copy from mmap).
@@ -151,12 +157,8 @@ impl<'f> MmapGroup<'f> {
     pub fn attrs(&self) -> Result<HashMap<String, AttrValue>, Error> {
         let data = self.file.reader.as_bytes();
         let hdr = self.file.parse_header(self.address)?;
-        let attr_msgs = extract_attributes_full(
-            data,
-            &hdr,
-            self.file.offset_size(),
-            self.file.length_size(),
-        )?;
+        let attr_msgs =
+            extract_attributes_full(data, &hdr, self.file.offset_size(), self.file.length_size())?;
         Ok(attrs_to_map(
             &attr_msgs,
             data,
@@ -176,7 +178,10 @@ impl<'f> MmapGroup<'f> {
         if !has_message(&hdr, MessageType::DataLayout) {
             return Err(Error::NotADataset(name.to_string()));
         }
-        Ok(MmapDataset { file: self.file, header: hdr })
+        Ok(MmapDataset {
+            file: self.file,
+            header: hdr,
+        })
     }
 
     /// Get a subgroup within this group by name.
@@ -408,12 +413,11 @@ fn has_message(header: &ObjectHeader, msg_type: MessageType) -> bool {
 }
 
 fn is_group(header: &ObjectHeader) -> bool {
-    header
-        .messages
-        .iter()
-        .any(|m| m.msg_type == MessageType::LinkInfo
+    header.messages.iter().any(|m| {
+        m.msg_type == MessageType::LinkInfo
             || m.msg_type == MessageType::Link
-            || m.msg_type == MessageType::SymbolTable)
+            || m.msg_type == MessageType::SymbolTable
+    })
 }
 
 fn resolve_group_entries(
